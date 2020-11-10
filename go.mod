@@ -3,10 +3,13 @@ module sigs.k8s.io/scheduler-plugins
 go 1.15
 
 require (
-	github.com/google/go-cmp v0.4.0
+	github.com/francoispqt/gojay v1.2.13
+	github.com/google/go-cmp v0.5.2
 	github.com/google/uuid v1.1.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible
+	github.com/paypal/load-watcher v0.0.0-20201124000647-fb86845885bf
 	github.com/spf13/pflag v1.0.5
+	github.com/stretchr/testify v1.5.1
 	k8s.io/api v0.19.0
 	k8s.io/apiextensions-apiserver v0.0.0
 	k8s.io/apimachinery v0.19.0
@@ -22,6 +25,10 @@ require (
 )
 
 replace (
+    // Below is added due to https://github.com/moby/term/pull/16
+	golang.org/x/sys => golang.org/x/sys v0.0.0-20200826173525-f9321e4c35a6
+	// Newer version of this breaks k8s.io/kubernetes v0.19.0
+	gopkg.in/square/go-jose.v2 => gopkg.in/square/go-jose.v2 v2.2.2
 	k8s.io/api => k8s.io/api v0.19.0
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.19.0
 	k8s.io/apimachinery => k8s.io/apimachinery v0.19.0
