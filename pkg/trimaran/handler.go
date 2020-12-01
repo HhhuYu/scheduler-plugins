@@ -2,11 +2,12 @@ package trimaran
 
 import (
 	"fmt"
+	"sync"
+	"time"
+
 	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientcache "k8s.io/client-go/tools/cache"
-	"sync"
-	"time"
 )
 
 const (
@@ -19,7 +20,7 @@ var _ clientcache.ResourceEventHandler = &PodAssignEventHandler{}
 // This event handler listens to a pod's spec.NodeName assign events after successful binding
 type PodAssignEventHandler struct {
 	ScheduledPodsCache map[string][]podInfo // Maintains the node-name to podInfo mapping for pods successfully bound to nodes
-	Mu                 sync.RWMutex
+	sync.RWMutex
 }
 
 // Stores Timestamp and Pod spec info object
@@ -68,15 +69,15 @@ func (p *PodAssignEventHandler) updateCache(pod *v1.Pod, nodeName string) {
 	if nodeName == "" {
 		return
 	}
-	p.Mu.Lock()
-	defer p.Mu.Unlock()
+	p.Lock()
+	defer p.Unlock()
 	p.ScheduledPodsCache[nodeName] = append(p.ScheduledPodsCache[nodeName],
 		podInfo{Timestamp: time.Now().Unix(), Pod: pod})
 }
 
 func (p *PodAssignEventHandler) cleanupCache() {
-	p.Mu.Lock()
-	defer p.Mu.Unlock()
+	p.Lock()
+	defer p.Unlock()
 	for nodeName := range p.ScheduledPodsCache {
 		cache := p.ScheduledPodsCache[nodeName]
 		curTime := time.Now().Unix()

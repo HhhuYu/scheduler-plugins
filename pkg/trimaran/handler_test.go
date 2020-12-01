@@ -1,10 +1,12 @@
 package trimaran
 
 import (
-	"github.com/stretchr/testify/assert"
-	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+
+	st "k8s.io/kubernetes/pkg/scheduler/testing"
 )
 
 func TestHandlerCacheCleanup(t *testing.T) {
@@ -13,9 +15,9 @@ func TestHandlerCacheCleanup(t *testing.T) {
 	pod2 := st.MakePod().Name("Pod-2").Obj()
 	pod3 := st.MakePod().Name("Pod-3").Obj()
 	p := New()
+	// Test OnUpdate doesn't add unassigned pods
 	p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], podInfo{Pod: pod1}, podInfo{Pod: pod2},
 		podInfo{Pod: pod3})
-
 	pod4 := st.MakePod().Name("Pod-4").Obj()
 	pod4.Spec.NodeName = testNode
 	pod4old := st.MakePod().Name("Pod-4").Obj()
@@ -24,7 +26,7 @@ func TestHandlerCacheCleanup(t *testing.T) {
 	assert.NotNil(t, p.ScheduledPodsCache[testNode])
 	assert.Equal(t, 1, len(p.ScheduledPodsCache[testNode]))
 	assert.Equal(t, pod4, p.ScheduledPodsCache[testNode][0].Pod)
-
+	// Test cleanupCache doesn't delete newly added pods
 	p.ScheduledPodsCache[testNode] = nil
 	p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], podInfo{Pod: pod1}, podInfo{Pod: pod2},
 		podInfo{Pod: pod3}, podInfo{Timestamp: time.Now().Unix(), Pod: pod4})
@@ -37,11 +39,8 @@ func TestHandlerCacheCleanup(t *testing.T) {
 	assert.Equal(t, 2, len(p.ScheduledPodsCache[testNode]))
 	assert.Equal(t, pod4, p.ScheduledPodsCache[testNode][0].Pod)
 	assert.Equal(t, pod5, p.ScheduledPodsCache[testNode][1].Pod)
-
-	p.ScheduledPodsCache[testNode] = nil
-	p.OnUpdate(pod5old, pod5)
+	// Test cleanupCache deletes old pods
+	p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], podInfo{Timestamp: time.Now().Unix() - 10000, Pod: pod5})
 	p.cleanupCache()
-	assert.NotNil(t, p.ScheduledPodsCache[testNode])
-	assert.Equal(t, 1, len(p.ScheduledPodsCache[testNode]))
-	assert.Equal(t, pod5, p.ScheduledPodsCache[testNode][0].Pod)
+	assert.Nil(t, p.ScheduledPodsCache[testNode])
 }

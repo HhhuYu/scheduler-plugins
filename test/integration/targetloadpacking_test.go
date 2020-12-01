@@ -63,7 +63,7 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 		resp.Write(bytes)
 	}))
 	// point watcher to test server
-	targetloadpacking.WatcherHostName = server.URL
+	targetloadpacking.watcherAddress = server.URL
 	targetloadpacking.WatcherBaseUrl = ""
 
 	defer server.Close()

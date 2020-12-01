@@ -18,7 +18,6 @@ package config
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
 )
 
@@ -85,9 +84,6 @@ type TargetLoadPackingArgs struct {
 	TargetCPUUtilization float64 `json:"mode,omitempty"`
 	// Default CPU requests to use for best effort QoS
 	DefaultCPURequests int64 `json:"mode,omitempty"`
-}
-
-// TODO(aqadeer): Use codegen for this
-func (b TargetLoadPackingArgs) DeepCopyObject() runtime.Object {
-	panic("implement me")
+	// Address of load watcher service
+	WatcherAddress string `json:"mode,omitempty"`
 }

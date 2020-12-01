@@ -26,7 +26,6 @@ import (
 	"github.com/francoispqt/gojay"
 	"math"
 	"net/http"
-	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 	"time"
 
 	"github.com/paypal/load-watcher/pkg/watcher"
@@ -36,6 +35,7 @@ import (
 	"k8s.io/klog/v2"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
 
 const (
@@ -51,9 +51,9 @@ const (
 var (
 	requestsMilliCores      = defaultRequestsMilliCores      // Default 1 core CPU usage for containers without requests/limits i.e. Best Effort QOS.
 	hostCPUThresholdPercent = defaultHostCPUThresholdPercent // Upper limit of CPU percent for bin packing. Recommended to keep -10 than desired limit.
+	watcherAddress          = "loadwatcher.svc.local:2020"
 	// Exported for testing
-	WatcherHostName         = "loadwatcher.svc.local:2020"
-	WatcherBaseUrl          = "/watcher"
+	WatcherBaseUrl = "/watcher"
 )
 
 type TargetLoadPacking struct {
@@ -64,12 +64,11 @@ type TargetLoadPacking struct {
 }
 
 func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin, error) {
-	args, err := getArgs(obj)
+	err := updateArguments(obj)
 	if err != nil {
 		return nil, err
 	}
-	requestsMilliCores = args.DefaultCPURequests
-	hostCPUThresholdPercent = args.TargetCPUUtilization
+
 	podAssignEventHandler := trimaran.New()
 	pl := &TargetLoadPacking{
 		handle: handle,
@@ -100,11 +99,11 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 }
 
 func (pl *TargetLoadPacking) updateMetrics() error {
-	req, err := http.NewRequest(http.MethodGet, WatcherHostName+WatcherBaseUrl, nil)
+	req, err := http.NewRequest(http.MethodGet, watcherAddress+WatcherBaseUrl, nil)
 	if err != nil {
 		klog.Errorf("new watcher request failed: %v", err)
 	}
-	klog.Info("watcher request succesful")
+	klog.Info("watcher request successful")
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := pl.client.Do(req) //TODO(aqadeer): Add a couple of retries for transient errors
@@ -153,9 +152,8 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 
-	metrics := pl.metrics // copy to maintain snapshot lest updateMetrics() updates the value
-	var ok bool
-	if _, ok = metrics.Data.NodeMetricsMap[nodeName]; !ok { // This means the node is new (no metrics yet) or metrics are unavailable due to 404 or 500
+	metrics := pl.metrics                                    // copy to maintain snapshot lest updateMetrics() updates the value
+	if _, ok := metrics.Data.NodeMetricsMap[nodeName]; !ok { // This means the node is new (no metrics yet) or metrics are unavailable due to 404 or 500
 		return framework.MinNodeScore, nil // Avoid the node by scoring minimum
 		//TODO(aqadeer): If this happens for a long time, fall back to allocation based packing. This could mean maintaining failure state across cycles if scheduler doesn't provide this state
 	}
@@ -185,8 +183,8 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	nodeCPUUtilMillis := (nodeCPUUtilPercent / 100) * nodeCPUCapMillis
 
 	var missingCPUUtilMillis int64 = 0
-	pl.eventHandler.Mu.RLock()
-	defer pl.eventHandler.Mu.RUnlock()
+	pl.eventHandler.RLock()
+	defer pl.eventHandler.RUnlock()
 	if _, ok := pl.eventHandler.ScheduledPodsCache[nodeName]; ok {
 		for _, info := range pl.eventHandler.ScheduledPodsCache[nodeName] {
 			// If the time stamp of the scheduled pod is outside fetched metrics window, or it is within metrics reporting interval seconds, we predict util.
@@ -227,6 +225,23 @@ func (pl *TargetLoadPacking) ScoreExtensions() framework.ScoreExtensions {
 }
 
 func (pl *TargetLoadPacking) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
+	return nil
+}
+
+func updateArguments(obj runtime.Object) error {
+	args, err := getArgs(obj)
+	if err != nil {
+		return err
+	}
+	if args.DefaultCPURequests != 0 {
+		requestsMilliCores = args.DefaultCPURequests
+	}
+	if args.TargetCPUUtilization != 0 {
+		hostCPUThresholdPercent = args.TargetCPUUtilization
+	}
+	if args.WatcherAddress != "" {
+		watcherAddress = args.WatcherAddress
+	}
 	return nil
 }
 

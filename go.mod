@@ -25,7 +25,7 @@ require (
 )
 
 replace (
-    // Below is added due to https://github.com/moby/term/pull/16
+	// Below is added due to https://github.com/moby/term/pull/16
 	golang.org/x/sys => golang.org/x/sys v0.0.0-20200826173525-f9321e4c35a6
 	// Newer version of this breaks k8s.io/kubernetes v0.19.0
 	gopkg.in/square/go-jose.v2 => gopkg.in/square/go-jose.v2 v2.2.2

@@ -24,7 +24,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -36,6 +35,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
+	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 )
 
 func TestSetup(t *testing.T) {

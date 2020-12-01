@@ -20,23 +20,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog/v2"
+
 	"log"
 	"math"
-	"github.com/paypal/load-watcher/pkg/watcher"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
 
+	"github.com/paypal/load-watcher/pkg/watcher"
 	"github.com/stretchr/testify/assert"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/informers"
 	testClientSet "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
@@ -203,7 +204,6 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				resp.Write(bytes)
 			}))
 			// point watcher to test server
-			WatcherHostName = server.URL
 			WatcherBaseUrl = ""
 
 			defer server.Close()
@@ -217,7 +217,8 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 			fh, err := st.NewFramework(registeredPlugins, runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(t, err)
-			p, err := New(nil, fh)
+			targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{WatcherAddress: server.URL}
+			p, err := New(&targetLoadPackingArgs, fh)
 			scorePlugin := p.(framework.ScorePlugin)
 			var actualList framework.NodeScoreList
 			for _, n := range tt.nodes {
@@ -257,11 +258,7 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 	registeredPlugins := []st.RegisterPluginFunc{
 		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		st.RegisterPreFilterPlugin(podtopologyspread.Name, podtopologyspread.New),
-		st.RegisterFilterPlugin(podtopologyspread.Name, podtopologyspread.New),
-		st.RegisterPreScorePlugin(podtopologyspread.Name, podtopologyspread.New),
 		st.RegisterScorePlugin(Name, New, 1),
-		st.RegisterPluginAsExtensions(Name, New, "PostBind"),
 	}
 
 	bfbpArgs := pluginConfig.TargetLoadPackingArgs{}
@@ -303,8 +300,8 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 				resp.Write(bytes)
 			}))
 			// point watcher to test server
-			WatcherHostName = server.URL
 			WatcherBaseUrl = ""
+			bfbpArgs.WatcherAddress = server.URL
 			defer server.Close()
 
 			fh, err := st.NewFramework(registeredPlugins, runtime.WithClientSet(cs),
@@ -313,7 +310,6 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 			pl, err := New(&bfbpArgs, fh)
 			assert.Nil(b, err)
 			scorePlugin := pl.(framework.ScorePlugin)
-			postBindPlugin := pl.(framework.PostBindPlugin)
 			informerFactory.Start(context.Background().Done())
 			informerFactory.WaitForCacheSync(context.Background().Done())
 
@@ -330,7 +326,6 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 				Until(ctx, len(nodes), scoreNode)
 				status := (scorePlugin.(framework.ScoreExtensions)).NormalizeScore(ctx, state, pod, gotList)
 				assert.True(b, status.IsSuccess())
-				postBindPlugin.PostBind(ctx, state, pod, pod.Spec.NodeName)
 			}
 		})
 	}
