@@ -333,8 +333,10 @@ profiles:
   pluginConfig:
   - name: TargetLoadPacking
     args:
-      TargetCPUUtilization: 60 
-      DefaultCPURequests: 1
+      targetCPUUtilization: 60 
+      defaultCPURequests:
+        cpu: "1000m"
+      watcherAddress: http://deadbeef:2020
 `, configKubeconfig)), os.FileMode(0600)); err != nil {
 		t.Fatal(err)
 	}
@@ -532,6 +534,7 @@ profiles:
 					"PostFilterPlugin": {{Name: "DefaultPreemption"}},
 					"PreBindPlugin":    {{Name: "VolumeBinding"}},
 					"PreFilterPlugin":  defaultPlugins["PreFilterPlugin"],
+					"PreScorePlugin":   defaultPlugins["PreScorePlugin"],
 					"QueueSortPlugin":  defaultPlugins["QueueSortPlugin"],
 					"ReservePlugin":    {{Name: "VolumeBinding"}},
 					"ScorePlugin":      {{Name: targetloadpacking.Name, Weight: 1}},
@@ -549,6 +552,7 @@ profiles:
 					"PostFilterPlugin": {{Name: "DefaultPreemption"}},
 					"PreBindPlugin":    {{Name: "VolumeBinding"}},
 					"PreFilterPlugin":  defaultPlugins["PreFilterPlugin"],
+					"PreScorePlugin":   defaultPlugins["PreScorePlugin"],
 					"QueueSortPlugin":  defaultPlugins["QueueSortPlugin"],
 					"ReservePlugin":    {{Name: "VolumeBinding"}},
 					"ScorePlugin":      {{Name: targetloadpacking.Name, Weight: 1}},

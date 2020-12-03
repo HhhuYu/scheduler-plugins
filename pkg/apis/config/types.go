@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
 )
@@ -81,9 +82,9 @@ type TargetLoadPackingArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// Node target CPU Utilisation for bin packing
-	TargetCPUUtilization float64 `json:"mode,omitempty"`
+	TargetCPUUtilization *float64 `json:"targetCPUUtilization,omitempty"`
 	// Default CPU requests to use for best effort QoS
-	DefaultCPURequests int64 `json:"mode,omitempty"`
+	DefaultCPURequests v1.ResourceList `json:"defaultCPURequests,omitempty" protobuf:"bytes,2,rep,name=max, casttype=ResourceList,castkey=ResourceName"`
 	// Address of load watcher service
-	WatcherAddress string `json:"mode,omitempty"`
+	WatcherAddress *string `json:"watcherAddress,omitempty"`
 }

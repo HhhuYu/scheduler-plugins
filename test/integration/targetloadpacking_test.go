@@ -6,11 +6,11 @@ import (
 	"github.com/paypal/load-watcher/pkg/watcher"
 	"net/http"
 	"net/http/httptest"
-	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +21,9 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	testutils "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
+
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -63,7 +66,6 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 		resp.Write(bytes)
 	}))
 	// point watcher to test server
-	targetloadpacking.watcherAddress = server.URL
 	targetloadpacking.WatcherBaseUrl = ""
 
 	defer server.Close()
@@ -76,6 +78,14 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 				},
 				Disabled: []schedapi.Plugin{
 					{Name: "*"},
+				},
+			},
+		},
+		PluginConfig: []schedapi.PluginConfig{
+			{
+				Name: targetloadpacking.Name,
+				Args: &config.TargetLoadPackingArgs{
+					WatcherAddress: &server.URL,
 				},
 			},
 		},

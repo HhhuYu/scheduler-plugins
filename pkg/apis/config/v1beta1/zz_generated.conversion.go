@@ -23,6 +23,7 @@ package v1beta1
 import (
 	unsafe "unsafe"
 
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -169,9 +170,9 @@ func Convert_config_NodeResourcesAllocatableArgs_To_v1beta1_NodeResourcesAllocat
 }
 
 func autoConvert_v1beta1_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(in *TargetLoadPackingArgs, out *config.TargetLoadPackingArgs, s conversion.Scope) error {
-	out.TargetCPUUtilization = in.TargetCPUUtilization
-	out.DefaultCPURequests = in.DefaultCPURequests
-	out.WatcherAddress = in.WatcherAddress
+	out.TargetCPUUtilization = (*float64)(unsafe.Pointer(in.TargetCPUUtilization))
+	out.DefaultCPURequests = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultCPURequests))
+	out.WatcherAddress = (*string)(unsafe.Pointer(in.WatcherAddress))
 	return nil
 }
 
@@ -181,9 +182,9 @@ func Convert_v1beta1_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(in *T
 }
 
 func autoConvert_config_TargetLoadPackingArgs_To_v1beta1_TargetLoadPackingArgs(in *config.TargetLoadPackingArgs, out *TargetLoadPackingArgs, s conversion.Scope) error {
-	out.TargetCPUUtilization = in.TargetCPUUtilization
-	out.DefaultCPURequests = in.DefaultCPURequests
-	out.WatcherAddress = in.WatcherAddress
+	out.TargetCPUUtilization = (*float64)(unsafe.Pointer(in.TargetCPUUtilization))
+	out.DefaultCPURequests = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultCPURequests))
+	out.WatcherAddress = (*string)(unsafe.Pointer(in.WatcherAddress))
 	return nil
 }
 

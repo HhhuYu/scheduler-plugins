@@ -21,6 +21,7 @@ limitations under the License.
 package config
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	v1 "k8s.io/kube-scheduler/config/v1"
 )
@@ -109,6 +110,23 @@ func (in *NodeResourcesAllocatableArgs) DeepCopyObject() runtime.Object {
 func (in *TargetLoadPackingArgs) DeepCopyInto(out *TargetLoadPackingArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
+	if in.TargetCPUUtilization != nil {
+		in, out := &in.TargetCPUUtilization, &out.TargetCPUUtilization
+		*out = new(float64)
+		**out = **in
+	}
+	if in.DefaultCPURequests != nil {
+		in, out := &in.DefaultCPURequests, &out.DefaultCPURequests
+		*out = make(corev1.ResourceList, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val.DeepCopy()
+		}
+	}
+	if in.WatcherAddress != nil {
+		in, out := &in.WatcherAddress, &out.WatcherAddress
+		*out = new(string)
+		**out = **in
+	}
 	return
 }
 

@@ -23,17 +23,20 @@ package targetloadpacking
 import (
 	"context"
 	"fmt"
-	"github.com/francoispqt/gojay"
 	"math"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/francoispqt/gojay"
 	"github.com/paypal/load-watcher/pkg/watcher"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
@@ -135,9 +138,10 @@ func (pl *TargetLoadPacking) Name() string {
 
 func getArgs(obj runtime.Object) (*pluginConfig.TargetLoadPackingArgs, error) {
 	if obj == nil {
+		targetCpuUtil := defaultHostCPUThresholdPercent
 		return &pluginConfig.TargetLoadPackingArgs{
-			TargetCPUUtilization: defaultHostCPUThresholdPercent,
-			DefaultCPURequests:   defaultRequestsMilliCores,
+			TargetCPUUtilization: &targetCpuUtil,
+			DefaultCPURequests:   v1.ResourceList{v1.ResourceCPU: resource.MustParse(strconv.FormatInt(defaultRequestsMilliCores, 10) + "m")},
 		}, nil
 	}
 	if targetLoadPackingArgs, ok := obj.(*pluginConfig.TargetLoadPackingArgs); ok {
@@ -149,7 +153,7 @@ func getArgs(obj runtime.Object) (*pluginConfig.TargetLoadPackingArgs, error) {
 func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
-		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+		return framework.MinNodeScore, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 
 	metrics := pl.metrics                                    // copy to maintain snapshot lest updateMetrics() updates the value
@@ -177,7 +181,7 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 
 	if !cpuMetricFound {
 		klog.Errorf("cpu metric not found for node %v in node metrics %v", nodeName, metrics.Data.NodeMetricsMap[nodeName].Metrics)
-		return 0, nil
+		return framework.MinNodeScore, nil
 	}
 	nodeCPUCapMillis := float64(nodeInfo.Node().Status.Capacity.Cpu().MilliValue())
 	nodeCPUUtilMillis := (nodeCPUUtilPercent / 100) * nodeCPUCapMillis
@@ -233,14 +237,14 @@ func updateArguments(obj runtime.Object) error {
 	if err != nil {
 		return err
 	}
-	if args.DefaultCPURequests != 0 {
-		requestsMilliCores = args.DefaultCPURequests
+	if args.DefaultCPURequests != nil && !args.DefaultCPURequests.Cpu().IsZero() {
+		requestsMilliCores = args.DefaultCPURequests.Cpu().MilliValue()
 	}
-	if args.TargetCPUUtilization != 0 {
-		hostCPUThresholdPercent = args.TargetCPUUtilization
+	if args.TargetCPUUtilization != nil && *args.TargetCPUUtilization != 0 {
+		hostCPUThresholdPercent = *args.TargetCPUUtilization
 	}
-	if args.WatcherAddress != "" {
-		watcherAddress = args.WatcherAddress
+	if args.WatcherAddress != nil && *args.WatcherAddress != "" {
+		watcherAddress = *args.WatcherAddress
 	}
 	return nil
 }

@@ -42,6 +42,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 )
 
@@ -217,7 +218,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 			fh, err := st.NewFramework(registeredPlugins, runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(t, err)
-			targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{WatcherAddress: server.URL}
+			targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{WatcherAddress: &server.URL}
 			p, err := New(&targetLoadPackingArgs, fh)
 			scorePlugin := p.(framework.ScorePlugin)
 			var actualList framework.NodeScoreList
@@ -301,7 +302,7 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 			}))
 			// point watcher to test server
 			WatcherBaseUrl = ""
-			bfbpArgs.WatcherAddress = server.URL
+			bfbpArgs.WatcherAddress = &server.URL
 			defer server.Close()
 
 			fh, err := st.NewFramework(registeredPlugins, runtime.WithClientSet(cs),
