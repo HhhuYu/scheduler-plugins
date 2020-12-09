@@ -27,6 +27,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientcache "k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -67,12 +68,12 @@ func (p *PodAssignEventHandler) OnAdd(obj interface{}) {
 func (p *PodAssignEventHandler) OnUpdate(oldObj, newObj interface{}) {
 	oldPod, ok := oldObj.(*v1.Pod)
 	if !ok {
-		utilruntime.HandleError(fmt.Errorf("dropping onUpdate event: can't decode old object %#v", oldObj))
+		utilruntime.HandleError(fmt.Errorf("dropping OnUpdate event: can't decode old object %#v", oldObj))
 		return
 	}
 	newPod, ok := newObj.(*v1.Pod)
 	if !ok {
-		utilruntime.HandleError(fmt.Errorf("dropping onUpdate event: can't decode new object %#v", newObj))
+		utilruntime.HandleError(fmt.Errorf("dropping OnUpdate event: can't decode new object %#v", newObj))
 		return
 	}
 	if oldPod.Spec.NodeName != newPod.Spec.NodeName && newPod.Spec.NodeName != "" {
@@ -81,7 +82,28 @@ func (p *PodAssignEventHandler) OnUpdate(oldObj, newObj interface{}) {
 }
 
 func (p *PodAssignEventHandler) OnDelete(obj interface{}) {
-	// Do nothing as cache is periodically cleaned
+	pod, ok := obj.(*v1.Pod)
+	if !ok {
+		utilruntime.HandleError(fmt.Errorf("dropping OnDelete event: can't decode old object %#v", obj))
+		return
+	}
+	nodeName := pod.Spec.NodeName
+	if nodeName != "" {
+		p.Lock()
+		defer p.Unlock()
+		if _, ok := p.ScheduledPodsCache[nodeName]; ok {
+			for i, v := range p.ScheduledPodsCache[nodeName] {
+				n := len(p.ScheduledPodsCache[nodeName])
+				if pod.ObjectMeta.UID == v.Pod.ObjectMeta.UID {
+					klog.V(10).Infof("deleting pod %#v", v.Pod)
+					copy(p.ScheduledPodsCache[nodeName][i:], p.ScheduledPodsCache[nodeName][i+1:])
+					p.ScheduledPodsCache[nodeName][n-1] = podInfo{}
+					p.ScheduledPodsCache[nodeName] = p.ScheduledPodsCache[nodeName][:n-1]
+					break
+				}
+			}
+		}
+	}
 }
 
 func (p *PodAssignEventHandler) updateCache(pod *v1.Pod, nodeName string) {
