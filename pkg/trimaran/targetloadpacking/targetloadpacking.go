@@ -54,7 +54,7 @@ const (
 var (
 	requestsMilliCores      = defaultRequestsMilliCores      // Default 1 core CPU usage for containers without requests/limits i.e. Best Effort QOS.
 	hostCPUThresholdPercent = defaultHostCPUThresholdPercent // Upper limit of CPU percent for bin packing. Recommended to keep -10 than desired limit.
-	watcherAddress          = "loadwatcher.svc.local:2020"
+	watcherAddress          = "http://127.0.0.1:2020"
 	// Exported for testing
 	WatcherBaseUrl = "/watcher"
 )
@@ -158,6 +158,7 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 
 	metrics := pl.metrics                                    // copy to maintain snapshot lest updateMetrics() updates the value
 	if _, ok := metrics.Data.NodeMetricsMap[nodeName]; !ok { // This means the node is new (no metrics yet) or metrics are unavailable due to 404 or 500
+		klog.V(6).Infof("unable to find metrics for node %v", nodeName)
 		return framework.MinNodeScore, nil // Avoid the node by scoring minimum
 		//TODO(aqadeer): If this happens for a long time, fall back to allocation based packing. This could mean maintaining failure state across cycles if scheduler doesn't provide this state
 	}
@@ -166,6 +167,7 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	for _, container := range pod.Spec.Containers {
 		curPodCPUUsage += PredictUtilisation(&container)
 	}
+	klog.V(6).Infof("predicted utilisation for pod %v: %v", pod.Name, curPodCPUUsage)
 	if pod.Spec.Overhead != nil {
 		curPodCPUUsage += pod.Spec.Overhead.Cpu().MilliValue()
 	}
@@ -186,6 +188,8 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	nodeCPUCapMillis := float64(nodeInfo.Node().Status.Capacity.Cpu().MilliValue())
 	nodeCPUUtilMillis := (nodeCPUUtilPercent / 100) * nodeCPUCapMillis
 
+	klog.V(6).Infof("node %v CPU Utilisation (millicores): %v, Capacity: %v", nodeName, nodeCPUUtilMillis, nodeCPUCapMillis)
+
 	var missingCPUUtilMillis int64 = 0
 	pl.eventHandler.RLock()
 	defer pl.eventHandler.RUnlock()
@@ -201,6 +205,7 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 					missingCPUUtilMillis += PredictUtilisation(&container)
 				}
 				missingCPUUtilMillis += info.Pod.Spec.Overhead.Cpu().MilliValue()
+				klog.V(6).Infof("missing utilisation for pod %v : %v", info.Pod.Name, missingCPUUtilMillis)
 			}
 		}
 		klog.V(6).Infof("missing utilisation for node %v : %v", nodeName, missingCPUUtilMillis)
