@@ -91,16 +91,17 @@ func (p *PodAssignEventHandler) OnDelete(obj interface{}) {
 	if nodeName != "" {
 		p.Lock()
 		defer p.Unlock()
-		if _, ok := p.ScheduledPodsCache[nodeName]; ok {
-			for i, v := range p.ScheduledPodsCache[nodeName] {
-				n := len(p.ScheduledPodsCache[nodeName])
-				if pod.ObjectMeta.UID == v.Pod.ObjectMeta.UID {
-					klog.V(10).Infof("deleting pod %#v", v.Pod)
-					copy(p.ScheduledPodsCache[nodeName][i:], p.ScheduledPodsCache[nodeName][i+1:])
-					p.ScheduledPodsCache[nodeName][n-1] = podInfo{}
-					p.ScheduledPodsCache[nodeName] = p.ScheduledPodsCache[nodeName][:n-1]
-					break
-				}
+		if _, ok := p.ScheduledPodsCache[nodeName]; !ok {
+			return
+		}
+		for i, v := range p.ScheduledPodsCache[nodeName] {
+			n := len(p.ScheduledPodsCache[nodeName])
+			if pod.ObjectMeta.UID == v.Pod.ObjectMeta.UID {
+				klog.V(10).Infof("deleting pod %#v", v.Pod)
+				copy(p.ScheduledPodsCache[nodeName][i:], p.ScheduledPodsCache[nodeName][i+1:])
+				p.ScheduledPodsCache[nodeName][n-1] = podInfo{}
+				p.ScheduledPodsCache[nodeName] = p.ScheduledPodsCache[nodeName][:n-1]
+				break
 			}
 		}
 	}
