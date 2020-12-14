@@ -17,6 +17,7 @@ limitations under the License.
 /*
 Package Trimaran provides common code for plugins developed for real load aware scheduling like TargetLoadPacking etc.
 */
+
 package trimaran
 
 import (
@@ -45,7 +46,7 @@ type PodAssignEventHandler struct {
 
 // Stores Timestamp and Pod spec info object
 type podInfo struct {
-	Timestamp int64 // This timestamp is initialised when adding it to ScheduledPodsCache after successful binding
+	Timestamp time.Time // This timestamp is initialised when adding it to ScheduledPodsCache after successful binding
 	Pod       *v1.Pod
 }
 
@@ -114,7 +115,7 @@ func (p *PodAssignEventHandler) updateCache(pod *v1.Pod, nodeName string) {
 	p.Lock()
 	defer p.Unlock()
 	p.ScheduledPodsCache[nodeName] = append(p.ScheduledPodsCache[nodeName],
-		podInfo{Timestamp: time.Now().Unix(), Pod: pod})
+		podInfo{Timestamp: time.Now(), Pod: pod})
 }
 
 func (p *PodAssignEventHandler) cleanupCache() {
@@ -124,7 +125,7 @@ func (p *PodAssignEventHandler) cleanupCache() {
 		cache := p.ScheduledPodsCache[nodeName]
 		curTime := time.Now().Unix()
 		for i := len(cache) - 1; i >= 0; i-- {
-			if curTime-cache[i].Timestamp > metricsAgentReportingIntervalSeconds {
+			if curTime-cache[i].Timestamp.Unix() > metricsAgentReportingIntervalSeconds {
 				n := copy(cache, cache[i+1:])
 				for j := n; j < len(cache); j++ {
 					cache[j] = podInfo{}

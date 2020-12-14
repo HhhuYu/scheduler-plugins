@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
 	"sigs.k8s.io/scheduler-plugins/pkg/podstate"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
-
+	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	// Ensure scheme package is initialized.
 	_ "sigs.k8s.io/scheduler-plugins/pkg/apis/config/scheme"
 )
@@ -49,6 +49,7 @@ func main() {
 		app.WithPlugin(crossnodepreemption.Name, crossnodepreemption.New),
 		app.WithPlugin(podstate.Name, podstate.New),
 		app.WithPlugin(qos.Name, qos.New),
+		app.WithPlugin(targetloadpacking.Name, targetloadpacking.New),
 	)
 
 	// TODO: once we switch everything over to Cobra commands, we can go back to calling

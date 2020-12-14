@@ -110,22 +110,12 @@ func (in *NodeResourcesAllocatableArgs) DeepCopyObject() runtime.Object {
 func (in *TargetLoadPackingArgs) DeepCopyInto(out *TargetLoadPackingArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	if in.TargetCPUUtilization != nil {
-		in, out := &in.TargetCPUUtilization, &out.TargetCPUUtilization
-		*out = new(float64)
-		**out = **in
-	}
-	if in.DefaultCPURequests != nil {
-		in, out := &in.DefaultCPURequests, &out.DefaultCPURequests
+	if in.DefaultRequests != nil {
+		in, out := &in.DefaultRequests, &out.DefaultRequests
 		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
-	}
-	if in.WatcherAddress != nil {
-		in, out := &in.WatcherAddress, &out.WatcherAddress
-		*out = new(string)
-		**out = **in
 	}
 	return
 }

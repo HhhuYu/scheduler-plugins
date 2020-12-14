@@ -18,10 +18,12 @@ limitations under the License.
 targetloadpacking package provides K8s scheduler plugin for best-fit variant of bin packing based on CPU utilisation around a target load
 It contains plugin for Score extension point.
 */
+
 package targetloadpacking
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -42,19 +44,19 @@ import (
 )
 
 const (
-	metricsAgentReportingIntervalSeconds         = 60  // Time interval in seconds for each metrics agent ingestion.
-	requestMultiplier                            = 1.5 // CPU usage is predicted as 1.5*requests for containers without limits i.e. Burstable QOS.
-	httpClientTimeoutSeconds                     = 55 * time.Second
-	metricsUpdateIntervalSeconds                 = 30
-	defaultRequestsMilliCores            int64   = 1000 // Default 1 core CPU usage for containers without requests/limits i.e. Best Effort QOS.
-	defaultHostCPUThresholdPercent       float64 = 40   // Default CPU Util Threshold. Recommended to keep -10 than desired limit.
-	Name                                         = "TargetLoadPacking"
+	metricsAgentReportingIntervalSeconds       = 60  // Time interval in seconds for each metrics agent ingestion.
+	requestMultiplier                          = 1.5 // CPU usage is predicted as 1.5*requests for containers without limits i.e. Burstable QOS.
+	httpClientTimeoutSeconds                   = 55 * time.Second
+	metricsUpdateIntervalSeconds               = 30
+	DefaultRequestsMilliCores            int64 = 1000 // Default 1 core CPU usage for containers without requests/limits i.e. Best Effort QOS.
+	DefaultTargetUtilizationPercent      int64 = 40   // Default CPU Util Threshold. Recommended to keep -10 than desired limit.
+	Name                                       = "TargetLoadPacking"
 )
 
 var (
-	requestsMilliCores      = defaultRequestsMilliCores      // Default 1 core CPU usage for containers without requests/limits i.e. Best Effort QOS.
-	hostCPUThresholdPercent = defaultHostCPUThresholdPercent // Upper limit of CPU percent for bin packing. Recommended to keep -10 than desired limit.
-	watcherAddress          = "http://127.0.0.1:2020"
+	requestsMilliCores           = DefaultRequestsMilliCores       // Default 1 core CPU usage for containers without requests/limits i.e. Best Effort QOS.
+	hostTargetUtilizationPercent = DefaultTargetUtilizationPercent // Upper limit of CPU percent for bin packing. Recommended to keep -10 than desired limit.
+	watcherAddress               = "http://127.0.0.1:2020"
 	// Exported for testing
 	WatcherBaseUrl = "/watcher"
 )
@@ -67,10 +69,13 @@ type TargetLoadPacking struct {
 }
 
 func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin, error) {
-	err := updateArguments(obj)
+	args, err := getArgs(obj)
 	if err != nil {
 		return nil, err
 	}
+	hostTargetUtilizationPercent = args.TargetUtilization
+	requestsMilliCores = args.DefaultRequests.Cpu().MilliValue()
+	watcherAddress = args.WatcherAddress
 
 	podAssignEventHandler := trimaran.New()
 	pl := &TargetLoadPacking{
@@ -105,13 +110,14 @@ func (pl *TargetLoadPacking) updateMetrics() error {
 	req, err := http.NewRequest(http.MethodGet, watcherAddress+WatcherBaseUrl, nil)
 	if err != nil {
 		klog.Errorf("new watcher request failed: %v", err)
+		return err
 	}
-	klog.Info("watcher request successful")
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := pl.client.Do(req) //TODO(aqadeer): Add a couple of retries for transient errors
 	if err != nil {
 		klog.Errorf("request to watcher failed: %v", err)
+		pl.metrics = watcher.WatcherMetrics{} // reset the metrics to avoid stale metrics. Probably use a timestamp for better control
 		return err
 	}
 	defer resp.Body.Close()
@@ -138,13 +144,16 @@ func (pl *TargetLoadPacking) Name() string {
 
 func getArgs(obj runtime.Object) (*pluginConfig.TargetLoadPackingArgs, error) {
 	if obj == nil {
-		targetCpuUtil := defaultHostCPUThresholdPercent
+		targetUtil := DefaultTargetUtilizationPercent
 		return &pluginConfig.TargetLoadPackingArgs{
-			TargetCPUUtilization: &targetCpuUtil,
-			DefaultCPURequests:   v1.ResourceList{v1.ResourceCPU: resource.MustParse(strconv.FormatInt(defaultRequestsMilliCores, 10) + "m")},
+			TargetUtilization: int64(targetUtil),
+			DefaultRequests:   v1.ResourceList{v1.ResourceCPU: resource.MustParse(strconv.FormatInt(DefaultRequestsMilliCores, 10) + "m")},
 		}, nil
 	}
 	if targetLoadPackingArgs, ok := obj.(*pluginConfig.TargetLoadPackingArgs); ok {
+		if targetLoadPackingArgs.WatcherAddress == "" {
+			return nil, errors.New("no watcher address configured")
+		}
 		return targetLoadPackingArgs, nil
 	}
 	return nil, fmt.Errorf("want args to be of type TargetLoadPackingArgs, got %T", obj)
@@ -199,8 +208,8 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 			// Note that the second condition doesn't guarantee metrics for that pod are not reported yet as the 0 <= t <= 2*metricsAgentReportingIntervalSeconds
 			// t = metricsAgentReportingIntervalSeconds is taken as average case and it doesn't hurt us much if we are
 			// counting metrics twice in case actual t is less than metricsAgentReportingIntervalSeconds
-			if info.Timestamp > metrics.Window.End || info.Timestamp <= metrics.Window.End &&
-				(metrics.Window.End-info.Timestamp) < metricsAgentReportingIntervalSeconds {
+			if info.Timestamp.Unix() > metrics.Window.End || info.Timestamp.Unix() <= metrics.Window.End &&
+				(metrics.Window.End-info.Timestamp.Unix()) < metricsAgentReportingIntervalSeconds {
 				for _, container := range info.Pod.Spec.Containers {
 					missingCPUUtilMillis += PredictUtilisation(&container)
 				}
@@ -215,16 +224,17 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	if nodeCPUCapMillis != 0 {
 		predictedCPUUsage = 100 * (nodeCPUUtilMillis + float64(curPodCPUUsage) + float64(missingCPUUtilMillis)) / nodeCPUCapMillis
 	}
-	if predictedCPUUsage > hostCPUThresholdPercent {
+	if predictedCPUUsage > float64(hostTargetUtilizationPercent) {
 		if predictedCPUUsage > 100 {
 			return framework.MinNodeScore, framework.NewStatus(framework.Success, "")
 		}
-		penalisedScore := int64(math.Round(50 * (100 - predictedCPUUsage) / (100 - hostCPUThresholdPercent)))
+		penalisedScore := int64(math.Round(50 * (100 - predictedCPUUsage) / (100 - float64(hostTargetUtilizationPercent))))
 		klog.V(6).Infof("penalised score for host %v: %v", nodeName, penalisedScore)
 		return penalisedScore, framework.NewStatus(framework.Success, "")
 	}
 
-	score := int64(math.Round((100-hostCPUThresholdPercent)*predictedCPUUsage/hostCPUThresholdPercent + hostCPUThresholdPercent))
+	score := int64(math.Round((100-float64(hostTargetUtilizationPercent))*
+		predictedCPUUsage/float64(hostTargetUtilizationPercent) + float64(hostTargetUtilizationPercent)))
 	klog.V(6).Infof("score for host %v: %v", nodeName, score)
 	return score, framework.NewStatus(framework.Success, "")
 }
@@ -234,23 +244,6 @@ func (pl *TargetLoadPacking) ScoreExtensions() framework.ScoreExtensions {
 }
 
 func (pl *TargetLoadPacking) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
-	return nil
-}
-
-func updateArguments(obj runtime.Object) error {
-	args, err := getArgs(obj)
-	if err != nil {
-		return err
-	}
-	if args.DefaultCPURequests != nil && !args.DefaultCPURequests.Cpu().IsZero() {
-		requestsMilliCores = args.DefaultCPURequests.Cpu().MilliValue()
-	}
-	if args.TargetCPUUtilization != nil && *args.TargetCPUUtilization != 0 {
-		hostCPUThresholdPercent = *args.TargetCPUUtilization
-	}
-	if args.WatcherAddress != nil && *args.WatcherAddress != "" {
-		watcherAddress = *args.WatcherAddress
-	}
 	return nil
 }
 

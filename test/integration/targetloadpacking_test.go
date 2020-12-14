@@ -85,7 +85,8 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 			{
 				Name: targetloadpacking.Name,
 				Args: &config.TargetLoadPackingArgs{
-					WatcherAddress: &server.URL,
+					WatcherAddress:    server.URL,
+					TargetUtilization: targetloadpacking.DefaultTargetUtilizationPercent,
 				},
 			},
 		},

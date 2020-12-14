@@ -170,9 +170,13 @@ func Convert_config_NodeResourcesAllocatableArgs_To_v1beta1_NodeResourcesAllocat
 }
 
 func autoConvert_v1beta1_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(in *TargetLoadPackingArgs, out *config.TargetLoadPackingArgs, s conversion.Scope) error {
-	out.TargetCPUUtilization = (*float64)(unsafe.Pointer(in.TargetCPUUtilization))
-	out.DefaultCPURequests = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultCPURequests))
-	out.WatcherAddress = (*string)(unsafe.Pointer(in.WatcherAddress))
+	if err := v1.Convert_Pointer_int64_To_int64(&in.TargetUtilization, &out.TargetUtilization, s); err != nil {
+		return err
+	}
+	out.DefaultRequests = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultRequests))
+	if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -182,9 +186,13 @@ func Convert_v1beta1_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(in *T
 }
 
 func autoConvert_config_TargetLoadPackingArgs_To_v1beta1_TargetLoadPackingArgs(in *config.TargetLoadPackingArgs, out *TargetLoadPackingArgs, s conversion.Scope) error {
-	out.TargetCPUUtilization = (*float64)(unsafe.Pointer(in.TargetCPUUtilization))
-	out.DefaultCPURequests = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultCPURequests))
-	out.WatcherAddress = (*string)(unsafe.Pointer(in.WatcherAddress))
+	if err := v1.Convert_int64_To_Pointer_int64(&in.TargetUtilization, &out.TargetUtilization, s); err != nil {
+		return err
+	}
+	out.DefaultRequests = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultRequests))
+	if err := v1.Convert_string_To_Pointer_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
+		return err
+	}
 	return nil
 }
 

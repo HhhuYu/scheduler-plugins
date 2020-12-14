@@ -79,12 +79,12 @@ type CapacitySchedulingArgs struct {
 
 // TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
 type TargetLoadPackingArgs struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta
 
 	// Node target CPU Utilisation for bin packing
-	TargetCPUUtilization *float64 `json:"targetCPUUtilization,omitempty"`
-	// Default CPU requests to use for best effort QoS
-	DefaultCPURequests v1.ResourceList `json:"defaultCPURequests,omitempty" protobuf:"bytes,2,rep,name=max, casttype=ResourceList,castkey=ResourceName"`
+	TargetUtilization int64
+	// Default requests to use for best effort QoS
+	DefaultRequests v1.ResourceList
 	// Address of load watcher service
-	WatcherAddress *string `json:"watcherAddress,omitempty"`
+	WatcherAddress string
 }

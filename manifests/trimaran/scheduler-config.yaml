@@ -5,11 +5,11 @@ leaderElection:
 clientConnection:
   kubeconfig: "REPLACE_ME_WITH_KUBE_CONFIG_PATH"
 profiles:
-  - schedulerName: default-scheduler
-    plugins:
-      score:
-        disabled:
-          - name: NodeResourcesBalancedAllocation
-          - name: NodeResourcesLeastAllocated
-        enabled:
-          - name: TargetLoadPacking
+- schedulerName: trimaran
+  plugins:
+    score:
+      disabled:
+      - name: NodeResourcesBalancedAllocation
+      - name: NodeResourcesLeastAllocated
+      enabled:
+      - name: TargetLoadPacking

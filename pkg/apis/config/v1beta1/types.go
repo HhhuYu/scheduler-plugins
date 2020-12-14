@@ -76,15 +76,15 @@ type CapacitySchedulingArgs struct {
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
+// +k8s:defaulter-gen=true
 // TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
 type TargetLoadPackingArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// Node target CPU Utilisation for bin packing
-	TargetCPUUtilization *float64 `json:"targetCPUUtilization,omitempty"`
-	// Default CPU requests to use for best effort QoS
-	DefaultCPURequests v1.ResourceList `json:"defaultCPURequests,omitempty" protobuf:"bytes,2,rep,name=max, casttype=ResourceList,castkey=ResourceName"`
+	TargetUtilization *int64 `json:"targetUtilization,omitempty"`
+	// Default requests to use for best effort QoS
+	DefaultRequests v1.ResourceList `json:"defaultRequests,omitempty"`
 	// Address of load watcher service
 	WatcherAddress *string `json:"watcherAddress,omitempty"`
 }

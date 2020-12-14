@@ -130,7 +130,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				},
 			},
 			expected: []framework.NodeScore{
-				{Name: "node-1", Score: int64(defaultHostCPUThresholdPercent)},
+				{Name: "node-1", Score: DefaultTargetUtilizationPercent},
 			},
 		},
 		{
@@ -148,7 +148,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 							Metrics: []watcher.Metric{
 								{
 									Type:  watcher.CPU,
-									Value: defaultHostCPUThresholdPercent + 10,
+									Value: float64(DefaultTargetUtilizationPercent + 10),
 								},
 							},
 						},
@@ -218,7 +218,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 			fh, err := st.NewFramework(registeredPlugins, runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(t, err)
-			targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{WatcherAddress: &server.URL}
+			targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{TargetUtilization: DefaultTargetUtilizationPercent, WatcherAddress: server.URL}
 			p, err := New(&targetLoadPackingArgs, fh)
 			scorePlugin := p.(framework.ScorePlugin)
 			var actualList framework.NodeScoreList
@@ -302,7 +302,7 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 			}))
 			// point watcher to test server
 			WatcherBaseUrl = ""
-			bfbpArgs.WatcherAddress = &server.URL
+			bfbpArgs.WatcherAddress = server.URL
 			defer server.Close()
 
 			fh, err := st.NewFramework(registeredPlugins, runtime.WithClientSet(cs),

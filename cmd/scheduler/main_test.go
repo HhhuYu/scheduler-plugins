@@ -303,19 +303,6 @@ profiles:
 		t.Fatal(err)
 	}
 
-	// TargetLoadPacking plugin config
-	targetLoadPackingConfigFile := filepath.Join(tmpDir, "targetLoadPacking.yaml")
-	if err := ioutil.WriteFile(targetLoadPackingConfigFile, []byte(fmt.Sprintf(`
-- plugins:
-    score:
-      enabled:
-      - name: TargetLoadPacking
-      disabled:
-      - name: "*"
-`, configKubeconfig)), os.FileMode(0600)); err != nil {
-		t.Fatal(err)
-	}
-
 	// TargetLoadPacking plugin config with arguments
 	targetLoadPackingConfigWithArgsFile := filepath.Join(tmpDir, "targetLoadPacking-with-args.yaml")
 	if err := ioutil.WriteFile(targetLoadPackingConfigWithArgsFile, []byte(fmt.Sprintf(`
@@ -333,8 +320,8 @@ profiles:
   pluginConfig:
   - name: TargetLoadPacking
     args:
-      targetCPUUtilization: 60 
-      defaultCPURequests:
+      targetUtilization: 60 
+      defaultRequests:
         cpu: "1000m"
       watcherAddress: http://deadbeef:2020
 `, configKubeconfig)), os.FileMode(0600)); err != nil {
@@ -520,24 +507,6 @@ profiles:
 					"QueueSortPlugin":  defaultPlugins["QueueSortPlugin"],
 					"ReservePlugin":    {{Name: "VolumeBinding"}},
 					"ScorePlugin":      {{Name: "NodeResourcesAllocatable", Weight: 1}},
-				},
-			},
-		},
-		{
-			name:            "single profile config - TargetLoadPacking",
-			flags:           []string{"--config", targetLoadPackingConfigFile},
-			registryOptions: []app.Option{app.WithPlugin(targetloadpacking.Name, targetloadpacking.New)},
-			wantPlugins: map[string]map[string][]kubeschedulerconfig.Plugin{
-				"default-scheduler": {
-					"BindPlugin":       {{Name: "DefaultBinder"}},
-					"FilterPlugin":     defaultPlugins["FilterPlugin"],
-					"PostFilterPlugin": {{Name: "DefaultPreemption"}},
-					"PreBindPlugin":    {{Name: "VolumeBinding"}},
-					"PreFilterPlugin":  defaultPlugins["PreFilterPlugin"],
-					"PreScorePlugin":   defaultPlugins["PreScorePlugin"],
-					"QueueSortPlugin":  defaultPlugins["QueueSortPlugin"],
-					"ReservePlugin":    {{Name: "VolumeBinding"}},
-					"ScorePlugin":      {{Name: targetloadpacking.Name, Weight: 1}},
 				},
 			},
 		},

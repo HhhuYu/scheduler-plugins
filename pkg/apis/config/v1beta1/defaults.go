@@ -19,7 +19,13 @@ limitations under the License.
 package v1beta1
 
 import (
+	"strconv"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
+
+	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 )
 
 var (
@@ -36,6 +42,10 @@ var (
 	defaultNodeResourcesAllocatableResourcesToWeightMap = []schedulerconfig.ResourceSpec{
 		{Name: "cpu", Weight: 1 << 20}, {Name: "memory", Weight: 1},
 	}
+
+	// defaults for TargetLoadPacking plugin
+	defaultTargetLoadPackingRequests    = targetloadpacking.DefaultRequestsMilliCores
+	defaultTargetLoadPackingUtilization = targetloadpacking.DefaultTargetUtilizationPercent
 
 	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
 )
@@ -67,5 +77,16 @@ func SetDefaultsNodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs) 
 func SetDefaultsCapacitySchedulingArgs(obj *CapacitySchedulingArgs) {
 	if obj.KubeConfigPath == nil {
 		obj.KubeConfigPath = &defaultKubeConfigPath
+	}
+}
+
+// SetDefaultTargetLoadPackingArgs sets the default parameters for TargetLoadPacking plugin
+func SetDefaultTargetLoadPackingArgs(args *TargetLoadPackingArgs) {
+	if args.TargetUtilization == nil || *args.TargetUtilization <= 0 {
+		args.TargetUtilization = &defaultTargetLoadPackingUtilization
+	}
+	if args.DefaultRequests == nil {
+		args.DefaultRequests = v1.ResourceList{v1.ResourceCPU: resource.MustParse(
+			strconv.FormatInt(defaultTargetLoadPackingRequests, 10) + "m")}
 	}
 }

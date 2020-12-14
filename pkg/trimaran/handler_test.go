@@ -29,7 +29,7 @@ func TestHandlerCacheCleanup(t *testing.T) {
 	// Test cleanupCache doesn't delete newly added pods
 	p.ScheduledPodsCache[testNode] = nil
 	p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], podInfo{Pod: pod1}, podInfo{Pod: pod2},
-		podInfo{Pod: pod3}, podInfo{Timestamp: time.Now().Unix(), Pod: pod4})
+		podInfo{Pod: pod3}, podInfo{Timestamp: time.Now(), Pod: pod4})
 	pod5 := st.MakePod().Name("Pod-5").Obj()
 	pod5.Spec.NodeName = testNode
 	pod5old := st.MakePod().Name("Pod-5").Obj()
@@ -40,7 +40,7 @@ func TestHandlerCacheCleanup(t *testing.T) {
 	assert.Equal(t, pod4, p.ScheduledPodsCache[testNode][0].Pod)
 	assert.Equal(t, pod5, p.ScheduledPodsCache[testNode][1].Pod)
 	// Test cleanupCache deletes old pods
-	p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], podInfo{Timestamp: time.Now().Unix() - 10000, Pod: pod5})
+	p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], podInfo{Timestamp: time.Now().Add(-5 * time.Minute), Pod: pod5})
 	p.cleanupCache()
 	assert.Nil(t, p.ScheduledPodsCache[testNode])
 }
