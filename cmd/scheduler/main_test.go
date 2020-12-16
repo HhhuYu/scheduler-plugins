@@ -28,6 +28,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
+
 	"k8s.io/kubernetes/cmd/kube-scheduler/app"
 	"k8s.io/kubernetes/cmd/kube-scheduler/app/options"
 	kubeschedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -323,6 +324,7 @@ profiles:
       targetUtilization: 60 
       defaultRequests:
         cpu: "1000m"
+      defaultRequestsMultiplier: "1.8"
       watcherAddress: http://deadbeef:2020
 `, configKubeconfig)), os.FileMode(0600)); err != nil {
 		t.Fatal(err)

@@ -21,32 +21,35 @@ Package Trimaran provides common code for plugins developed for real load aware 
 package trimaran
 
 import (
-	"fmt"
+	"sort"
 	"sync"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientcache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 )
 
 const (
-	cacheCleanupIntervalMinutes          = 5  // This is the maximum staleness of metrics possible by load watcher
-	metricsAgentReportingIntervalSeconds = 60 // Time interval in seconds for each metrics agent ingestion.
+	// This is the maximum staleness of metrics possible by load watcher
+	cacheCleanupIntervalMinutes = 5
+	// Time interval in seconds for each metrics agent ingestion.
+	metricsAgentReportingIntervalSeconds = 60
 )
 
 var _ clientcache.ResourceEventHandler = &PodAssignEventHandler{}
 
 // This event handler listens to a pod's spec.NodeName assign events after successful binding
 type PodAssignEventHandler struct {
-	ScheduledPodsCache map[string][]podInfo // Maintains the node-name to podInfo mapping for pods successfully bound to nodes
+	// Maintains the node-name to podInfo mapping for pods successfully bound to nodes
+	ScheduledPodsCache map[string][]podInfo
 	sync.RWMutex
 }
 
 // Stores Timestamp and Pod spec info object
 type podInfo struct {
-	Timestamp time.Time // This timestamp is initialised when adding it to ScheduledPodsCache after successful binding
+	// This timestamp is initialised when adding it to ScheduledPodsCache after successful binding
+	Timestamp time.Time
 	Pod       *v1.Pod
 }
 
@@ -63,49 +66,38 @@ func New() *PodAssignEventHandler {
 }
 
 func (p *PodAssignEventHandler) OnAdd(obj interface{}) {
-	// Do nothing as newly added pods aren't assigned Spec.NodeName right away
+	pod := obj.(*v1.Pod)
+	p.updateCache(pod, pod.Spec.NodeName)
 }
 
 func (p *PodAssignEventHandler) OnUpdate(oldObj, newObj interface{}) {
-	oldPod, ok := oldObj.(*v1.Pod)
-	if !ok {
-		utilruntime.HandleError(fmt.Errorf("dropping OnUpdate event: can't decode old object %#v", oldObj))
-		return
-	}
-	newPod, ok := newObj.(*v1.Pod)
-	if !ok {
-		utilruntime.HandleError(fmt.Errorf("dropping OnUpdate event: can't decode new object %#v", newObj))
-		return
-	}
-	if oldPod.Spec.NodeName != newPod.Spec.NodeName && newPod.Spec.NodeName != "" {
+	oldPod := oldObj.(*v1.Pod)
+	newPod := newObj.(*v1.Pod)
+
+	if oldPod.Spec.NodeName != newPod.Spec.NodeName {
 		p.updateCache(newPod, newPod.Spec.NodeName)
 	}
 }
 
 func (p *PodAssignEventHandler) OnDelete(obj interface{}) {
-	pod, ok := obj.(*v1.Pod)
-	if !ok {
-		utilruntime.HandleError(fmt.Errorf("dropping OnDelete event: can't decode old object %#v", obj))
+	pod := obj.(*v1.Pod)
+	nodeName := pod.Spec.NodeName
+	p.Lock()
+	defer p.Unlock()
+	if _, ok := p.ScheduledPodsCache[nodeName]; !ok {
 		return
 	}
-	nodeName := pod.Spec.NodeName
-	if nodeName != "" {
-		p.Lock()
-		defer p.Unlock()
-		if _, ok := p.ScheduledPodsCache[nodeName]; !ok {
-			return
-		}
-		for i, v := range p.ScheduledPodsCache[nodeName] {
-			n := len(p.ScheduledPodsCache[nodeName])
-			if pod.ObjectMeta.UID == v.Pod.ObjectMeta.UID {
-				klog.V(10).Infof("deleting pod %#v", v.Pod)
-				copy(p.ScheduledPodsCache[nodeName][i:], p.ScheduledPodsCache[nodeName][i+1:])
-				p.ScheduledPodsCache[nodeName][n-1] = podInfo{}
-				p.ScheduledPodsCache[nodeName] = p.ScheduledPodsCache[nodeName][:n-1]
-				break
-			}
+	for i, v := range p.ScheduledPodsCache[nodeName] {
+		n := len(p.ScheduledPodsCache[nodeName])
+		if pod.ObjectMeta.UID == v.Pod.ObjectMeta.UID {
+			klog.V(10).Infof("deleting pod %#v", v.Pod)
+			copy(p.ScheduledPodsCache[nodeName][i:], p.ScheduledPodsCache[nodeName][i+1:])
+			p.ScheduledPodsCache[nodeName][n-1] = podInfo{}
+			p.ScheduledPodsCache[nodeName] = p.ScheduledPodsCache[nodeName][:n-1]
+			break
 		}
 	}
+
 }
 
 func (p *PodAssignEventHandler) updateCache(pod *v1.Pod, nodeName string) {
@@ -118,22 +110,25 @@ func (p *PodAssignEventHandler) updateCache(pod *v1.Pod, nodeName string) {
 		podInfo{Timestamp: time.Now(), Pod: pod})
 }
 
+// Deletes podInfo entries that are older than metricsAgentReportingIntervalSeconds. Also deletes node entry if empty
 func (p *PodAssignEventHandler) cleanupCache() {
 	p.Lock()
 	defer p.Unlock()
 	for nodeName := range p.ScheduledPodsCache {
 		cache := p.ScheduledPodsCache[nodeName]
-		curTime := time.Now().Unix()
-		for i := len(cache) - 1; i >= 0; i-- {
-			if curTime-cache[i].Timestamp.Unix() > metricsAgentReportingIntervalSeconds {
-				n := copy(cache, cache[i+1:])
-				for j := n; j < len(cache); j++ {
-					cache[j] = podInfo{}
-				}
-				cache = cache[:n]
-				break
-			}
+		curTime := time.Now()
+		idx := sort.Search(len(cache), func(i int) bool {
+			return cache[i].Timestamp.Add(metricsAgentReportingIntervalSeconds * time.Second).After(curTime)
+		})
+		if idx == len(cache) {
+			continue
 		}
+		n := copy(cache, cache[idx:])
+		for j := n; j < len(cache); j++ {
+			cache[j] = podInfo{}
+		}
+		cache = cache[:n]
+
 		if len(cache) == 0 {
 			delete(p.ScheduledPodsCache, nodeName)
 		} else {

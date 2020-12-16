@@ -24,8 +24,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
-
-	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 )
 
 var (
@@ -43,9 +41,13 @@ var (
 		{Name: "cpu", Weight: 1 << 20}, {Name: "memory", Weight: 1},
 	}
 
-	// defaults for TargetLoadPacking plugin
-	defaultTargetLoadPackingRequests    = targetloadpacking.DefaultRequestsMilliCores
-	defaultTargetLoadPackingUtilization = targetloadpacking.DefaultTargetUtilizationPercent
+	// Defaults for TargetLoadPacking plugin
+	// Default 1 core CPU usage for containers without requests and limits i.e. Best Effort QoS.
+	DefaultRequestsMilliCores int64 = 1000
+	// Default requests multiplier for containers without limits predicted as 1.5*requests i.e. Burstable QoS class
+	DefaultRequestsMultiplier = "1.5"
+	// Default CPU Util target. Recommended to keep -10 than desired limit.
+	DefaultTargetUtilizationPercent int64 = 40
 
 	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
 )
@@ -82,11 +84,14 @@ func SetDefaultsCapacitySchedulingArgs(obj *CapacitySchedulingArgs) {
 
 // SetDefaultTargetLoadPackingArgs sets the default parameters for TargetLoadPacking plugin
 func SetDefaultTargetLoadPackingArgs(args *TargetLoadPackingArgs) {
-	if args.TargetUtilization == nil || *args.TargetUtilization <= 0 {
-		args.TargetUtilization = &defaultTargetLoadPackingUtilization
-	}
 	if args.DefaultRequests == nil {
 		args.DefaultRequests = v1.ResourceList{v1.ResourceCPU: resource.MustParse(
-			strconv.FormatInt(defaultTargetLoadPackingRequests, 10) + "m")}
+			strconv.FormatInt(DefaultRequestsMilliCores, 10) + "m")}
+	}
+	if args.DefaultRequestsMultiplier == nil {
+		args.DefaultRequestsMultiplier = &DefaultRequestsMultiplier
+	}
+	if args.TargetUtilization == nil || *args.TargetUtilization <= 0 {
+		args.TargetUtilization = &DefaultTargetUtilizationPercent
 	}
 }

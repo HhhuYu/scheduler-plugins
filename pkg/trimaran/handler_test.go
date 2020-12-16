@@ -14,33 +14,66 @@ func TestHandlerCacheCleanup(t *testing.T) {
 	pod1 := st.MakePod().Name("Pod-1").Obj()
 	pod2 := st.MakePod().Name("Pod-2").Obj()
 	pod3 := st.MakePod().Name("Pod-3").Obj()
-	p := New()
-	// Test OnUpdate doesn't add unassigned pods
-	p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], podInfo{Pod: pod1}, podInfo{Pod: pod2},
-		podInfo{Pod: pod3})
 	pod4 := st.MakePod().Name("Pod-4").Obj()
-	pod4.Spec.NodeName = testNode
-	pod4old := st.MakePod().Name("Pod-4").Obj()
-	p.OnUpdate(pod4old, pod4)
-	p.cleanupCache()
-	assert.NotNil(t, p.ScheduledPodsCache[testNode])
-	assert.Equal(t, 1, len(p.ScheduledPodsCache[testNode]))
-	assert.Equal(t, pod4, p.ScheduledPodsCache[testNode][0].Pod)
-	// Test cleanupCache doesn't delete newly added pods
-	p.ScheduledPodsCache[testNode] = nil
-	p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], podInfo{Pod: pod1}, podInfo{Pod: pod2},
-		podInfo{Pod: pod3}, podInfo{Timestamp: time.Now(), Pod: pod4})
-	pod5 := st.MakePod().Name("Pod-5").Obj()
-	pod5.Spec.NodeName = testNode
-	pod5old := st.MakePod().Name("Pod-5").Obj()
-	p.OnUpdate(pod5old, pod5)
-	p.cleanupCache()
-	assert.NotNil(t, p.ScheduledPodsCache[testNode])
-	assert.Equal(t, 2, len(p.ScheduledPodsCache[testNode]))
-	assert.Equal(t, pod4, p.ScheduledPodsCache[testNode][0].Pod)
-	assert.Equal(t, pod5, p.ScheduledPodsCache[testNode][1].Pod)
-	// Test cleanupCache deletes old pods
-	p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], podInfo{Timestamp: time.Now().Add(-5 * time.Minute), Pod: pod5})
-	p.cleanupCache()
-	assert.Nil(t, p.ScheduledPodsCache[testNode])
+
+	tests := []struct {
+		name              string
+		podInfoList       []podInfo
+		podToUpdate       string
+		expectedCacheSize int
+		expectedCachePods []string
+	}{
+		{
+			name: "OnUpdate doesn't add unassigned pods",
+			podInfoList: []podInfo{
+				{Pod: pod1},
+				{Pod: pod2},
+				{Pod: pod3}},
+			podToUpdate:       "Pod-4",
+			expectedCacheSize: 1,
+			expectedCachePods: []string{"Pod-4"},
+		},
+		{
+			name: "cleanupCache doesn't delete newly added pods",
+			podInfoList: []podInfo{
+				{Pod: pod1},
+				{Pod: pod2},
+				{Pod: pod3},
+				{Timestamp: time.Now(), Pod: pod4}},
+			podToUpdate:       "Pod-5",
+			expectedCacheSize: 2,
+			expectedCachePods: []string{"Pod-4", "Pod-5"},
+		},
+		{
+			name: "cleanupCache deletes old pods",
+			podInfoList: []podInfo{
+				{Timestamp: time.Now().Add(-5 * time.Minute), Pod: pod1},
+				{Timestamp: time.Now().Add(-10 * time.Second), Pod: pod2},
+				{Timestamp: time.Now().Add(-5 * time.Second), Pod: pod3},
+			},
+			expectedCacheSize: 2,
+			expectedCachePods: []string{pod2.Name, pod3.Name},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := New()
+			for _, v := range tt.podInfoList {
+				p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], v)
+			}
+			if tt.podToUpdate != "" {
+				pod := st.MakePod().Name(tt.podToUpdate).Obj()
+				pod.Spec.NodeName = testNode
+				oldPod := st.MakePod().Name(tt.podToUpdate).Obj()
+				p.OnUpdate(oldPod, pod)
+			}
+			p.cleanupCache()
+			assert.NotNil(t, p.ScheduledPodsCache[testNode])
+			assert.Equal(t, tt.expectedCacheSize, len(p.ScheduledPodsCache[testNode]))
+			for i, v := range p.ScheduledPodsCache[testNode] {
+				assert.Equal(t, tt.expectedCachePods[i], v.Pod.Name)
+			}
+		})
+	}
 }

@@ -12,11 +12,16 @@ This folder holds the `TargetLoadPacking` plugin implementation based on [Trimar
 - [ ] 👨 Stable (used in companies for production workloads)
 
 ## TargetLoadPacking Plugin
-`TargetLoadPacking` depends on [Load Watcher](https://github.com/paypal/load-watcher) service.
+`TargetLoadPacking` depends on [Load Watcher](https://github.com/paypal/load-watcher) service. Instructions to build and deploy load watcher can be found [here](https://github.com/paypal/load-watcher/blob/master/README.md).
+`watcherAddress` argument below must be setup for `TargetLoadPacking` to work.
 
-If deploying from inside your cluster, make sure to comment out line 4 and 5 in `manifests/trimaran/scheduler-config.yaml`
+Apart from `watcherAddress`, you can configure the following in `TargetLoadPackingArgs`:
 
-You can configure `targetUtilization`, `defaultRequests` and `watcherAddress` in `TargetLoadPackingArgs`. Following is an example config:
+1) `targetUtilization` : CPU Utilization % target you would like to achieve in bin packing. It is recommended to keep this value 10 less than what you desire. Default if not specified is 40.
+2) `defaultRequests` : This configures CPU requests for containers without requests or limits i.e. Best Effort QoS. Default is 1 core.
+3) `defaultRequestsMultiplier` : This configures multiplier for containers without limits i.e. Burstable QoS. Default is 1.5
+
+Following is an example config to achieve around 80% CPU utilization, with default CPU requests as 2 cores and requests multiplier as 2:
 
 ```yaml
 apiVersion: kubescheduler.config.k8s.io/v1beta1
@@ -35,10 +40,9 @@ profiles:
   pluginConfig:
   - name: TargetLoadPacking
     args:
-      targetUtilization: 80 
       defaultRequests:
         cpu: "2000m"
+      defaultRequestsMultiplier: 2
+      targetUtilization: 70 
       watcherAddress: http://127.0.0.1:2020
 ```
-
-It is recommended to keep `targetUtilization` value 10 less than what you desire. `watcherAddress` is a required argument.

@@ -28,35 +28,37 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/francoispqt/gojay"
 	"github.com/paypal/load-watcher/pkg/watcher"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
 
 const (
-	metricsAgentReportingIntervalSeconds       = 60  // Time interval in seconds for each metrics agent ingestion.
-	requestMultiplier                          = 1.5 // CPU usage is predicted as 1.5*requests for containers without limits i.e. Burstable QOS.
-	httpClientTimeoutSeconds                   = 55 * time.Second
-	metricsUpdateIntervalSeconds               = 30
-	DefaultRequestsMilliCores            int64 = 1000 // Default 1 core CPU usage for containers without requests/limits i.e. Best Effort QOS.
-	DefaultTargetUtilizationPercent      int64 = 40   // Default CPU Util Threshold. Recommended to keep -10 than desired limit.
-	Name                                       = "TargetLoadPacking"
+	// Time interval in seconds for each metrics agent ingestion.
+	metricsAgentReportingIntervalSeconds = 60
+	httpClientTimeoutSeconds             = 55 * time.Second
+	metricsUpdateIntervalSeconds         = 30
+	Name                                 = "TargetLoadPacking"
 )
 
 var (
-	requestsMilliCores           = DefaultRequestsMilliCores       // Default 1 core CPU usage for containers without requests/limits i.e. Best Effort QOS.
-	hostTargetUtilizationPercent = DefaultTargetUtilizationPercent // Upper limit of CPU percent for bin packing. Recommended to keep -10 than desired limit.
+	requestsMilliCores           = v1beta1.DefaultRequestsMilliCores
+	hostTargetUtilizationPercent = v1beta1.DefaultTargetUtilizationPercent
 	watcherAddress               = "http://127.0.0.1:2020"
+	requestsMultiplier           float64
 	// Exported for testing
 	WatcherBaseUrl = "/watcher"
 )
@@ -66,6 +68,8 @@ type TargetLoadPacking struct {
 	client       http.Client
 	metrics      watcher.WatcherMetrics
 	eventHandler *trimaran.PodAssignEventHandler
+	// For safe access to metrics
+	mu sync.RWMutex
 }
 
 func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin, error) {
@@ -76,6 +80,7 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 	hostTargetUtilizationPercent = args.TargetUtilization
 	requestsMilliCores = args.DefaultRequests.Cpu().MilliValue()
 	watcherAddress = args.WatcherAddress
+	requestsMultiplier, _ = strconv.ParseFloat(args.DefaultRequestsMultiplier, 64)
 
 	podAssignEventHandler := trimaran.New()
 	pl := &TargetLoadPacking{
@@ -86,7 +91,26 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 		eventHandler: podAssignEventHandler,
 	}
 
-	pl.handle.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(podAssignEventHandler)
+	pl.handle.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
+		cache.FilteringResourceEventHandler{
+			FilterFunc: func(obj interface{}) bool {
+				switch t := obj.(type) {
+				case *v1.Pod:
+					return isAssigned(t)
+				case cache.DeletedFinalStateUnknown:
+					if pod, ok := t.Obj.(*v1.Pod); ok {
+						return isAssigned(pod)
+					}
+					utilruntime.HandleError(fmt.Errorf("unable to convert object %T to *v1.Pod in %T", obj, pl))
+					return false
+				default:
+					utilruntime.HandleError(fmt.Errorf("unable to handle object in %T: %T", pl, obj))
+					return false
+				}
+			},
+			Handler: podAssignEventHandler,
+		},
+	)
 
 	// populate metrics before returning
 	err = pl.updateMetrics()
@@ -114,10 +138,14 @@ func (pl *TargetLoadPacking) updateMetrics() error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := pl.client.Do(req) //TODO(aqadeer): Add a couple of retries for transient errors
+	//TODO(aqadeer): Add a couple of retries for transient errors
+	resp, err := pl.client.Do(req)
 	if err != nil {
 		klog.Errorf("request to watcher failed: %v", err)
-		pl.metrics = watcher.WatcherMetrics{} // reset the metrics to avoid stale metrics. Probably use a timestamp for better control
+		// Reset the metrics to avoid stale metrics. Probably use a timestamp for better control
+		pl.mu.Lock()
+		pl.metrics = watcher.WatcherMetrics{}
+		pl.mu.Unlock()
 		return err
 	}
 	defer resp.Body.Close()
@@ -131,7 +159,9 @@ func (pl *TargetLoadPacking) updateMetrics() error {
 		if err != nil {
 			klog.Errorf("unable to decode watcher metrics: %v", err)
 		}
+		pl.mu.Lock()
 		pl.metrics = metrics
+		pl.mu.Unlock()
 	} else {
 		klog.Errorf("received status code %v from watcher", resp.StatusCode)
 	}
@@ -143,20 +173,18 @@ func (pl *TargetLoadPacking) Name() string {
 }
 
 func getArgs(obj runtime.Object) (*pluginConfig.TargetLoadPackingArgs, error) {
-	if obj == nil {
-		targetUtil := DefaultTargetUtilizationPercent
-		return &pluginConfig.TargetLoadPackingArgs{
-			TargetUtilization: int64(targetUtil),
-			DefaultRequests:   v1.ResourceList{v1.ResourceCPU: resource.MustParse(strconv.FormatInt(DefaultRequestsMilliCores, 10) + "m")},
-		}, nil
+	targetLoadPackingArgs, ok := obj.(*pluginConfig.TargetLoadPackingArgs)
+	if !ok {
+		return nil, fmt.Errorf("want args to be of type TargetLoadPackingArgs, got %T", obj)
 	}
-	if targetLoadPackingArgs, ok := obj.(*pluginConfig.TargetLoadPackingArgs); ok {
-		if targetLoadPackingArgs.WatcherAddress == "" {
-			return nil, errors.New("no watcher address configured")
-		}
-		return targetLoadPackingArgs, nil
+	if targetLoadPackingArgs.WatcherAddress == "" {
+		return nil, errors.New("no watcher address configured")
 	}
-	return nil, fmt.Errorf("want args to be of type TargetLoadPackingArgs, got %T", obj)
+	_, err := strconv.ParseFloat(targetLoadPackingArgs.DefaultRequestsMultiplier, 64)
+	if err != nil {
+		return nil, errors.New("unable to parse DefaultRequestsMultiplier: " + err.Error())
+	}
+	return targetLoadPackingArgs, nil
 }
 
 func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
@@ -165,10 +193,15 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 		return framework.MinNodeScore, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 
-	metrics := pl.metrics                                    // copy to maintain snapshot lest updateMetrics() updates the value
-	if _, ok := metrics.Data.NodeMetricsMap[nodeName]; !ok { // This means the node is new (no metrics yet) or metrics are unavailable due to 404 or 500
+	// copy reference lest updateMetrics() updates the value and to avoid locking for rest of the function
+	pl.mu.RLock()
+	metrics := pl.metrics
+	pl.mu.RUnlock()
+	// This means the node is new (no metrics yet) or metrics are unavailable due to 404 or 500
+	if _, ok := metrics.Data.NodeMetricsMap[nodeName]; !ok {
 		klog.V(6).Infof("unable to find metrics for node %v", nodeName)
-		return framework.MinNodeScore, nil // Avoid the node by scoring minimum
+		// Avoid the node by scoring minimum
+		return framework.MinNodeScore, nil
 		//TODO(aqadeer): If this happens for a long time, fall back to allocation based packing. This could mean maintaining failure state across cycles if scheduler doesn't provide this state
 	}
 
@@ -201,24 +234,22 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 
 	var missingCPUUtilMillis int64 = 0
 	pl.eventHandler.RLock()
-	defer pl.eventHandler.RUnlock()
-	if _, ok := pl.eventHandler.ScheduledPodsCache[nodeName]; ok {
-		for _, info := range pl.eventHandler.ScheduledPodsCache[nodeName] {
-			// If the time stamp of the scheduled pod is outside fetched metrics window, or it is within metrics reporting interval seconds, we predict util.
-			// Note that the second condition doesn't guarantee metrics for that pod are not reported yet as the 0 <= t <= 2*metricsAgentReportingIntervalSeconds
-			// t = metricsAgentReportingIntervalSeconds is taken as average case and it doesn't hurt us much if we are
-			// counting metrics twice in case actual t is less than metricsAgentReportingIntervalSeconds
-			if info.Timestamp.Unix() > metrics.Window.End || info.Timestamp.Unix() <= metrics.Window.End &&
-				(metrics.Window.End-info.Timestamp.Unix()) < metricsAgentReportingIntervalSeconds {
-				for _, container := range info.Pod.Spec.Containers {
-					missingCPUUtilMillis += PredictUtilisation(&container)
-				}
-				missingCPUUtilMillis += info.Pod.Spec.Overhead.Cpu().MilliValue()
-				klog.V(6).Infof("missing utilisation for pod %v : %v", info.Pod.Name, missingCPUUtilMillis)
+	for _, info := range pl.eventHandler.ScheduledPodsCache[nodeName] {
+		// If the time stamp of the scheduled pod is outside fetched metrics window, or it is within metrics reporting interval seconds, we predict util.
+		// Note that the second condition doesn't guarantee metrics for that pod are not reported yet as the 0 <= t <= 2*metricsAgentReportingIntervalSeconds
+		// t = metricsAgentReportingIntervalSeconds is taken as average case and it doesn't hurt us much if we are
+		// counting metrics twice in case actual t is less than metricsAgentReportingIntervalSeconds
+		if info.Timestamp.Unix() > metrics.Window.End || info.Timestamp.Unix() <= metrics.Window.End &&
+			(metrics.Window.End-info.Timestamp.Unix()) < metricsAgentReportingIntervalSeconds {
+			for _, container := range info.Pod.Spec.Containers {
+				missingCPUUtilMillis += PredictUtilisation(&container)
 			}
+			missingCPUUtilMillis += info.Pod.Spec.Overhead.Cpu().MilliValue()
+			klog.V(6).Infof("missing utilisation for pod %v : %v", info.Pod.Name, missingCPUUtilMillis)
 		}
-		klog.V(6).Infof("missing utilisation for node %v : %v", nodeName, missingCPUUtilMillis)
 	}
+	pl.eventHandler.RUnlock()
+	klog.V(6).Infof("missing utilisation for node %v : %v", nodeName, missingCPUUtilMillis)
 
 	var predictedCPUUsage float64
 	if nodeCPUCapMillis != 0 {
@@ -243,8 +274,13 @@ func (pl *TargetLoadPacking) ScoreExtensions() framework.ScoreExtensions {
 	return pl
 }
 
-func (pl *TargetLoadPacking) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
+func (pl *TargetLoadPacking) NormalizeScore(context.Context, *framework.CycleState, *v1.Pod, framework.NodeScoreList) *framework.Status {
 	return nil
+}
+
+// Checks and returns true if the pod is assigned to a node
+func isAssigned(pod *v1.Pod) bool {
+	return len(pod.Spec.NodeName) != 0
 }
 
 // Predict utilisation for a container based on its requests/limits
@@ -252,7 +288,7 @@ func PredictUtilisation(container *v1.Container) int64 {
 	if _, ok := container.Resources.Limits[v1.ResourceCPU]; ok {
 		return container.Resources.Limits.Cpu().MilliValue()
 	} else if _, ok := container.Resources.Requests[v1.ResourceCPU]; ok {
-		return int64(math.Round(float64(container.Resources.Requests.Cpu().MilliValue()) * requestMultiplier))
+		return int64(math.Round(float64(container.Resources.Requests.Cpu().MilliValue()) * requestsMultiplier))
 	} else {
 		return requestsMilliCores
 	}

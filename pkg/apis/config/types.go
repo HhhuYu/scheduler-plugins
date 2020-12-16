@@ -81,10 +81,12 @@ type CapacitySchedulingArgs struct {
 type TargetLoadPackingArgs struct {
 	metav1.TypeMeta
 
-	// Node target CPU Utilisation for bin packing
-	TargetUtilization int64
 	// Default requests to use for best effort QoS
 	DefaultRequests v1.ResourceList
+	// Default requests multiplier for busrtable QoS
+	DefaultRequestsMultiplier string
+	// Node target CPU Utilisation for bin packing
+	TargetUtilization int64
 	// Address of load watcher service
 	WatcherAddress string
 }
