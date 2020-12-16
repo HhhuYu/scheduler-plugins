@@ -3,12 +3,12 @@ package integration
 import (
 	"context"
 	"encoding/json"
-	"github.com/paypal/load-watcher/pkg/watcher"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/paypal/load-watcher/pkg/watcher"
 	"github.com/stretchr/testify/assert"
 
 	v1 "k8s.io/api/core/v1"
@@ -23,6 +23,7 @@ import (
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
@@ -85,8 +86,9 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 			{
 				Name: targetloadpacking.Name,
 				Args: &config.TargetLoadPackingArgs{
-					WatcherAddress:    server.URL,
-					TargetUtilization: targetloadpacking.DefaultTargetUtilizationPercent,
+					WatcherAddress:            server.URL,
+					TargetUtilization:         v1beta1.DefaultTargetUtilizationPercent,
+					DefaultRequestsMultiplier: v1beta1.DefaultRequestsMultiplier,
 				},
 			},
 		},
