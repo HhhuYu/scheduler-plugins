@@ -15,6 +15,8 @@ FROM golang:1.15.2
 
 WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
 COPY . .
+ENV GO111MODULE=on
+ENV GOPROXY=https://goproxy.io,direct
 RUN make build-controller
 
 FROM alpine:3.12
