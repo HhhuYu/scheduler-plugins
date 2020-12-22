@@ -42,7 +42,7 @@ profiles:
     args:
       defaultRequests:
         cpu: "2000m"
-      defaultRequestsMultiplier: 2
+      defaultRequestsMultiplier: "2"
       targetUtilization: 70 
       watcherAddress: http://127.0.0.1:2020
 ```
