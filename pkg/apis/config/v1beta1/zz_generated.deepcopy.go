@@ -135,22 +135,19 @@ func (in *NodeResourcesAllocatableArgs) DeepCopyObject() runtime.Object {
 func (in *TargetLoadPackingArgs) DeepCopyInto(out *TargetLoadPackingArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	if in.DefaultRequests != nil {
-		in, out := &in.DefaultRequests, &out.DefaultRequests
-		*out = make(corev1.ResourceList, len(*in))
-		for key, val := range *in {
-			(*out)[key] = val.DeepCopy()
-		}
-	}
-	if in.DefaultRequestsMultiplier != nil {
-		in, out := &in.DefaultRequestsMultiplier, &out.DefaultRequestsMultiplier
-		*out = new(string)
-		**out = **in
-	}
 	if in.TargetUtilization != nil {
 		in, out := &in.TargetUtilization, &out.TargetUtilization
-		*out = new(int64)
-		**out = **in
+		*out = make(map[corev1.ResourceName]int64, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.WeightMap != nil {
+		in, out := &in.WeightMap, &out.WeightMap
+		*out = make(map[corev1.ResourceName]int64, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
 	}
 	if in.WatcherAddress != nil {
 		in, out := &in.WatcherAddress, &out.WatcherAddress

@@ -83,11 +83,17 @@ type TargetLoadPackingArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// Default requests to use for best effort QoS
-	DefaultRequests v1.ResourceList `json:"defaultRequests,omitempty"`
+	// DefaultRequests v1.ResourceList `json:"defaultRequests,omitempty"`
 	// Default requests multiplier for busrtable QoS
-	DefaultRequestsMultiplier *string `json:"defaultRequestsMultiplier,omitempty"`
+	// DefaultRequestsMultiplier *string `json:"defaultRequestsMultiplier,omitempty"`
 	// Node target CPU Utilisation for bin packing
-	TargetUtilization *int64 `json:"targetUtilization,omitempty"`
+	TargetUtilization map[v1.ResourceName]int64 `json:"targetUtilization,omitempty"`
+	// Resources to be considered when scoring.
+	// Allowed weights start from 1.
+	// An example resource set might include "cpu" (millicores) and "memory" (bytes)
+	// with weights of 1<<20 and 1 respectfully. That would mean 1 MiB has equivalent
+	// weight as 1 millicore.
+	WeightMap map[v1.ResourceName]int64 `json:"weightMap,omitempty"`
 	// Address of load watcher service
 	WatcherAddress *string `json:"watcherAddress,omitempty"`
 }

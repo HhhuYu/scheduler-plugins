@@ -305,6 +305,30 @@ profiles:
 	}
 
 	// TargetLoadPacking plugin config with arguments
+	// 	targetLoadPackingConfigWithArgsFile := filepath.Join(tmpDir, "targetLoadPacking-with-args.yaml")
+	// 	if err := ioutil.WriteFile(targetLoadPackingConfigWithArgsFile, []byte(fmt.Sprintf(`
+	// apiVersion: kubescheduler.config.k8s.io/v1beta1
+	// kind: KubeSchedulerConfiguration
+	// clientConnection:
+	//   kubeconfig: "%s"
+	// profiles:
+	// - plugins:
+	//     score:
+	//       enabled:
+	//       - name: TargetLoadPacking
+	//       disabled:
+	//       - name: "*"
+	//   pluginConfig:
+	//   - name: TargetLoadPacking
+	//     args:
+	//       targetUtilization: 60
+	//       defaultRequests:
+	//         cpu: "1000m"
+	//       defaultRequestsMultiplier: "1.8"
+	//       watcherAddress: http://deadbeef:2020
+	// `, configKubeconfig)), os.FileMode(0600)); err != nil {
+	// 		t.Fatal(err)
+	// 	}
 	targetLoadPackingConfigWithArgsFile := filepath.Join(tmpDir, "targetLoadPacking-with-args.yaml")
 	if err := ioutil.WriteFile(targetLoadPackingConfigWithArgsFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta1
@@ -321,10 +345,12 @@ profiles:
   pluginConfig:
   - name: TargetLoadPacking
     args:
-      targetUtilization: 60 
-      defaultRequests:
-        cpu: "1000m"
-      defaultRequestsMultiplier: "1.8"
+      targetUtilization: 
+        cpu: 70
+        memory: 70
+      weightMap:
+        cpu: 0
+        memory: 100
       watcherAddress: http://deadbeef:2020
 `, configKubeconfig)), os.FileMode(0600)); err != nil {
 		t.Fatal(err)

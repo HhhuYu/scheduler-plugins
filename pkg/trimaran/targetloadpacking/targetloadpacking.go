@@ -55,14 +55,17 @@ const (
 )
 
 var (
+	reqiestsMilliMemory          = v1beta1.DefaultRequestsMilliMemory
 	requestsMilliCores           = v1beta1.DefaultRequestsMilliCores
+	scoringWeight                = v1beta1.DefaultNodeResourcesScoringWeightMap
 	hostTargetUtilizationPercent = v1beta1.DefaultTargetUtilizationPercent
 	watcherAddress               = "http://127.0.0.1:2020"
 	requestsMultiplier           float64
-	// Exported for testing
+	// WatcherBaseUrl Exported for testing
 	WatcherBaseUrl = "/watcher"
 )
 
+// TargetLoadPacking plugin struct
 type TargetLoadPacking struct {
 	handle       framework.FrameworkHandle
 	client       http.Client
@@ -72,15 +75,17 @@ type TargetLoadPacking struct {
 	mu sync.RWMutex
 }
 
+// New TargetLoadPacking plugin new
 func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin, error) {
 	args, err := getArgs(obj)
 	if err != nil {
 		return nil, err
 	}
 	hostTargetUtilizationPercent = args.TargetUtilization
-	requestsMilliCores = args.DefaultRequests.Cpu().MilliValue()
+	// requestsMilliCores = 1000
 	watcherAddress = args.WatcherAddress
-	requestsMultiplier, _ = strconv.ParseFloat(args.DefaultRequestsMultiplier, 64)
+	scoringWeight = args.WeightMap
+	requestsMultiplier, _ = strconv.ParseFloat("1.0", 64)
 
 	podAssignEventHandler := trimaran.New()
 	pl := &TargetLoadPacking{
@@ -168,6 +173,7 @@ func (pl *TargetLoadPacking) updateMetrics() error {
 	return nil
 }
 
+// Name return TargetLoadPacking name
 func (pl *TargetLoadPacking) Name() string {
 	return Name
 }
@@ -180,7 +186,7 @@ func getArgs(obj runtime.Object) (*pluginConfig.TargetLoadPackingArgs, error) {
 	if targetLoadPackingArgs.WatcherAddress == "" {
 		return nil, errors.New("no watcher address configured")
 	}
-	_, err := strconv.ParseFloat(targetLoadPackingArgs.DefaultRequestsMultiplier, 64)
+	_, err := strconv.ParseFloat("1.8", 64)
 	if err != nil {
 		return nil, errors.New("unable to parse DefaultRequestsMultiplier: " + err.Error())
 	}
@@ -205,21 +211,28 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 		//TODO(aqadeer): If this happens for a long time, fall back to allocation based packing. This could mean maintaining failure state across cycles if scheduler doesn't provide this state
 	}
 
-	var curPodCPUUsage int64
+	var curPodCPUUsage, curPodMemoryUsage int64
 	for _, container := range pod.Spec.Containers {
-		curPodCPUUsage += PredictUtilisation(&container)
+		curPodCPUUsage += cpuPredictUtilisation(&container)
+		curPodMemoryUsage += memoryPredictUtilisation(&container)
 	}
-	klog.V(6).Infof("predicted utilisation for pod %v: %v", pod.Name, curPodCPUUsage)
+	klog.V(6).Infof("cpu predicted utilisation for pod %v: %v", pod.Name, curPodCPUUsage)
+	klog.V(6).Infof("memory predicted utilisation for pod %v: %v", pod.Name, curPodMemoryUsage)
 	if pod.Spec.Overhead != nil {
 		curPodCPUUsage += pod.Spec.Overhead.Cpu().MilliValue()
+		curPodMemoryUsage += pod.Spec.Overhead.Memory().MilliValue()
 	}
 
-	var nodeCPUUtilPercent float64
-	var cpuMetricFound bool
+	var nodeCPUUtilPercent, nodeMemoryUtilPercent float64
+	var cpuMetricFound, memoryMetricFound bool
 	for _, metric := range metrics.Data.NodeMetricsMap[nodeName].Metrics {
 		if metric.Type == watcher.CPU {
 			nodeCPUUtilPercent = metric.Value
 			cpuMetricFound = true
+		}
+		if metric.Type == watcher.Memory {
+			nodeMemoryUtilPercent = metric.Value
+			memoryMetricFound = true
 		}
 	}
 
@@ -230,9 +243,17 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	nodeCPUCapMillis := float64(nodeInfo.Node().Status.Capacity.Cpu().MilliValue())
 	nodeCPUUtilMillis := (nodeCPUUtilPercent / 100) * nodeCPUCapMillis
 
-	klog.V(6).Infof("node %v CPU Utilisation (millicores): %v, Capacity: %v", nodeName, nodeCPUUtilMillis, nodeCPUCapMillis)
+	if !memoryMetricFound {
+		klog.Errorf("memory metric not found for node %v in node metrics %v", nodeName, metrics.Data.NodeMetricsMap[nodeName].Metrics)
+		return framework.MinNodeScore, nil
+	}
+	nodeMemoryCapMillis := float64(nodeInfo.Node().Status.Capacity.Memory().MilliValue())
+	nodeMemoryUtilMillis := (nodeMemoryUtilPercent / 100) * nodeMemoryCapMillis
 
-	var missingCPUUtilMillis int64 = 0
+	klog.V(6).Infof("node %v CPU Utilisation (millicores): %v, Capacity: %v", nodeName, nodeCPUUtilMillis, nodeCPUCapMillis)
+	klog.V(6).Infof("node %v Memory Utilisation (millicores): %v, Capacity: %v", nodeName, nodeMemoryUtilMillis, nodeMemoryCapMillis)
+
+	var missingCPUUtilMillis, missingMemoryUtilMillis int64
 	pl.eventHandler.RLock()
 	for _, info := range pl.eventHandler.ScheduledPodsCache[nodeName] {
 		// If the time stamp of the scheduled pod is outside fetched metrics window, or it is within metrics reporting interval seconds, we predict util.
@@ -242,30 +263,52 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 		if info.Timestamp.Unix() > metrics.Window.End || info.Timestamp.Unix() <= metrics.Window.End &&
 			(metrics.Window.End-info.Timestamp.Unix()) < metricsAgentReportingIntervalSeconds {
 			for _, container := range info.Pod.Spec.Containers {
-				missingCPUUtilMillis += PredictUtilisation(&container)
+				missingCPUUtilMillis += cpuPredictUtilisation(&container)
+				missingMemoryUtilMillis += memoryPredictUtilisation(&container)
 			}
 			missingCPUUtilMillis += info.Pod.Spec.Overhead.Cpu().MilliValue()
-			klog.V(6).Infof("missing utilisation for pod %v : %v", info.Pod.Name, missingCPUUtilMillis)
+			missingMemoryUtilMillis += info.Pod.Spec.Overhead.Memory().MilliValue()
+			klog.V(6).Infof("cpu missing utilisation for pod %v : %v", info.Pod.Name, missingCPUUtilMillis)
+			klog.V(6).Infof("memory missing utilisation for pod %v : %v", info.Pod.Name, missingMemoryUtilMillis)
 		}
 	}
 	pl.eventHandler.RUnlock()
-	klog.V(6).Infof("missing utilisation for node %v : %v", nodeName, missingCPUUtilMillis)
-
-	var predictedCPUUsage float64
+	klog.V(6).Infof("cpu missing utilisation for node %v : %v", nodeName, missingCPUUtilMillis)
+	klog.V(6).Infof("memory missing utilisation for node %v : %v", nodeName, missingMemoryUtilMillis)
+	var predictedCPUUsage, predictedMemoryUsage float64
 	if nodeCPUCapMillis != 0 {
 		predictedCPUUsage = 100 * (nodeCPUUtilMillis + float64(curPodCPUUsage) + float64(missingCPUUtilMillis)) / nodeCPUCapMillis
 	}
-	if predictedCPUUsage > float64(hostTargetUtilizationPercent) {
+	if nodeMemoryCapMillis != 0 {
+		predictedMemoryUsage = 100 * (nodeMemoryUtilMillis + float64(curPodMemoryUsage) + float64(missingMemoryUtilMillis)) / nodeMemoryCapMillis
+	}
+	if predictedCPUUsage > float64(hostTargetUtilizationPercent[v1.ResourceCPU]) {
 		if predictedCPUUsage > 100 {
 			return framework.MinNodeScore, framework.NewStatus(framework.Success, "")
 		}
-		penalisedScore := int64(math.Round(50 * (100 - predictedCPUUsage) / (100 - float64(hostTargetUtilizationPercent))))
+		penalisedScore := int64(math.Round(50 * (100 - predictedCPUUsage) / (100 - float64(hostTargetUtilizationPercent[v1.ResourceCPU]))))
 		klog.V(6).Infof("penalised score for host %v: %v", nodeName, penalisedScore)
 		return penalisedScore, framework.NewStatus(framework.Success, "")
 	}
 
-	score := int64(math.Round((100-float64(hostTargetUtilizationPercent))*
-		predictedCPUUsage/float64(hostTargetUtilizationPercent) + float64(hostTargetUtilizationPercent)))
+	if predictedMemoryUsage > float64(hostTargetUtilizationPercent[v1.ResourceCPU]) {
+		if predictedMemoryUsage > 100 {
+			return framework.MinNodeScore, framework.NewStatus(framework.Success, "")
+		}
+		penalisedScore := int64(math.Round(50 * (100 - predictedMemoryUsage) / (100 - float64(hostTargetUtilizationPercent[v1.ResourceMemory]))))
+		klog.V(6).Infof("penalised score for host %v: %v", nodeName, penalisedScore)
+		return penalisedScore, framework.NewStatus(framework.Success, "")
+	}
+
+	cpuScore := int64(math.Round((100-float64(hostTargetUtilizationPercent[v1.ResourceCPU]))*
+		predictedCPUUsage/float64(hostTargetUtilizationPercent[v1.ResourceCPU]) + float64(hostTargetUtilizationPercent[v1.ResourceCPU])))
+	klog.V(6).Infof("cpu score for host %v: %v", nodeName, cpuScore)
+
+	memoryScore := int64(math.Round((100-float64(hostTargetUtilizationPercent[v1.ResourceMemory]))*
+		predictedMemoryUsage/float64(hostTargetUtilizationPercent[v1.ResourceMemory]) + float64(hostTargetUtilizationPercent[v1.ResourceMemory])))
+	klog.V(6).Infof("memory score for host %v: %v", nodeName, memoryScore)
+
+	score := int64(float64(scoringWeight[v1.ResourceCPU])*float64(cpuScore)/100 + float64(scoringWeight[v1.ResourceMemory])*float64(memoryScore)/100)
 	klog.V(6).Infof("score for host %v: %v", nodeName, score)
 	return score, framework.NewStatus(framework.Success, "")
 }
@@ -284,12 +327,22 @@ func isAssigned(pod *v1.Pod) bool {
 }
 
 // Predict utilisation for a container based on its requests/limits
-func PredictUtilisation(container *v1.Container) int64 {
+func cpuPredictUtilisation(container *v1.Container) int64 {
 	if _, ok := container.Resources.Limits[v1.ResourceCPU]; ok {
 		return container.Resources.Limits.Cpu().MilliValue()
 	} else if _, ok := container.Resources.Requests[v1.ResourceCPU]; ok {
 		return int64(math.Round(float64(container.Resources.Requests.Cpu().MilliValue()) * requestsMultiplier))
 	} else {
 		return requestsMilliCores
+	}
+}
+
+func memoryPredictUtilisation(container *v1.Container) int64 {
+	if _, ok := container.Resources.Limits[v1.ResourceMemory]; ok {
+		return container.Resources.Limits.Memory().MilliValue()
+	} else if _, ok := container.Resources.Requests[v1.ResourceMemory]; ok {
+		return int64(math.Round(float64(container.Resources.Requests.Memory().MilliValue()) * requestsMultiplier))
+	} else {
+		return reqiestsMilliMemory
 	}
 }

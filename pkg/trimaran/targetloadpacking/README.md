@@ -40,9 +40,11 @@ profiles:
   pluginConfig:
   - name: TargetLoadPacking
     args:
-      defaultRequests:
-        cpu: "2000m"
-      defaultRequestsMultiplier: "2"
-      targetUtilization: 70 
+      targetUtilization: 
+        cpu: 70
+        memory: 70
+      weightMap:
+        cpu: 0
+        memory: 100
       watcherAddress: http://127.0.0.1:2020
 ```

@@ -82,11 +82,17 @@ type TargetLoadPackingArgs struct {
 	metav1.TypeMeta
 
 	// Default requests to use for best effort QoS
-	DefaultRequests v1.ResourceList
+	// DefaultRequests v1.ResourceList
 	// Default requests multiplier for busrtable QoS
-	DefaultRequestsMultiplier string
+	// DefaultRequestsMultiplier string
 	// Node target CPU Utilisation for bin packing
-	TargetUtilization int64
+	TargetUtilization map[v1.ResourceName]int64
+	// Resources to be considered when scoring.
+	// Allowed weights start from 1.
+	// An example resource set might include "cpu" (millicores) and "memory" (bytes)
+	// with weights of 1<<20 and 1 respectfully. That would mean 1 MiB has equivalent
+	// weight as 1 millicore.
+	WeightMap map[v1.ResourceName]int64
 	// Address of load watcher service
 	WatcherAddress string
 }

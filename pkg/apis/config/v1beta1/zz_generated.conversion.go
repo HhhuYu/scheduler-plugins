@@ -170,13 +170,8 @@ func Convert_config_NodeResourcesAllocatableArgs_To_v1beta1_NodeResourcesAllocat
 }
 
 func autoConvert_v1beta1_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(in *TargetLoadPackingArgs, out *config.TargetLoadPackingArgs, s conversion.Scope) error {
-	out.DefaultRequests = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultRequests))
-	if err := v1.Convert_Pointer_string_To_string(&in.DefaultRequestsMultiplier, &out.DefaultRequestsMultiplier, s); err != nil {
-		return err
-	}
-	if err := v1.Convert_Pointer_int64_To_int64(&in.TargetUtilization, &out.TargetUtilization, s); err != nil {
-		return err
-	}
+	out.TargetUtilization = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.TargetUtilization))
+	out.WeightMap = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.WeightMap))
 	if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
 		return err
 	}
@@ -189,13 +184,8 @@ func Convert_v1beta1_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(in *T
 }
 
 func autoConvert_config_TargetLoadPackingArgs_To_v1beta1_TargetLoadPackingArgs(in *config.TargetLoadPackingArgs, out *TargetLoadPackingArgs, s conversion.Scope) error {
-	out.DefaultRequests = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultRequests))
-	if err := v1.Convert_string_To_Pointer_string(&in.DefaultRequestsMultiplier, &out.DefaultRequestsMultiplier, s); err != nil {
-		return err
-	}
-	if err := v1.Convert_int64_To_Pointer_int64(&in.TargetUtilization, &out.TargetUtilization, s); err != nil {
-		return err
-	}
+	out.TargetUtilization = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.TargetUtilization))
+	out.WeightMap = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.WeightMap))
 	if err := v1.Convert_string_To_Pointer_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
 		return err
 	}

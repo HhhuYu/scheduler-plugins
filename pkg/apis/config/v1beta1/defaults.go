@@ -19,10 +19,7 @@ limitations under the License.
 package v1beta1
 
 import (
-	"strconv"
-
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
 )
 
@@ -43,11 +40,28 @@ var (
 
 	// Defaults for TargetLoadPacking plugin
 	// Default 1 core CPU usage for containers without requests and limits i.e. Best Effort QoS.
-	DefaultRequestsMilliCores int64 = 1000
+	DefaultRequestsMilliCores  int64 = 1000
+	DefaultRequestsMilliMemory int64 = 1000
 	// Default requests multiplier for containers without limits predicted as 1.5*requests i.e. Burstable QoS class
-	DefaultRequestsMultiplier = "1.5"
-	// Default CPU Util target. Recommended to keep -10 than desired limit.
-	DefaultTargetUtilizationPercent int64 = 40
+	DefaultRequestsMultiplier = "1"
+	// DefaultCPUTargetUtilizationPercent. Recommended to keep -10 than desired limit.
+	defaultCPUTargetUtilizationPercent int64 = 40
+	// DefaultMemoryTargetUtilizationPercent Recommended to keep -10 than desired limit.
+	defaultMemoryTargetUtilizationPercent int64 = 40
+	// DefaultCPUWeight the cpu scoring weight
+	defaultCPUWeight int64 = 0
+	// DefaultMemoryWeight the memory scoring weight
+	defaultMemoryWeight int64 = 0
+	// DefaultTargetUtilizationPercent include cpu and memory
+	DefaultTargetUtilizationPercent = map[v1.ResourceName]int64{
+		v1.ResourceCPU:    defaultCPUTargetUtilizationPercent,
+		v1.ResourceMemory: defaultMemoryTargetUtilizationPercent,
+	}
+
+	DefaultNodeResourcesScoringWeightMap = map[v1.ResourceName]int64{
+		v1.ResourceCPU:    defaultCPUWeight,
+		v1.ResourceMemory: defaultMemoryWeight,
+	}
 
 	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
 )
@@ -84,14 +98,21 @@ func SetDefaultsCapacitySchedulingArgs(obj *CapacitySchedulingArgs) {
 
 // SetDefaultTargetLoadPackingArgs sets the default parameters for TargetLoadPacking plugin
 func SetDefaultTargetLoadPackingArgs(args *TargetLoadPackingArgs) {
-	if args.DefaultRequests == nil {
-		args.DefaultRequests = v1.ResourceList{v1.ResourceCPU: resource.MustParse(
-			strconv.FormatInt(DefaultRequestsMilliCores, 10) + "m")}
+	// if args.DefaultRequests == nil {
+	// 	args.DefaultRequests = v1.ResourceList{v1.ResourceCPU: resource.MustParse(
+	// 		strconv.FormatInt(DefaultRequestsMilliCores, 10) + "m")}
+	// }
+	// if args.DefaultRequestsMultiplier == nil {
+	// 	args.DefaultRequestsMultiplier = &DefaultRequestsMultiplier
+	// }
+	// if args.TargetUtilization == nil || *args.TargetUtilization <= 0 {
+	// 	args.TargetUtilization = &DefaultTargetUtilizationPercent
+	// }
+	if args.WeightMap == nil {
+		args.WeightMap = DefaultNodeResourcesScoringWeightMap
+
 	}
-	if args.DefaultRequestsMultiplier == nil {
-		args.DefaultRequestsMultiplier = &DefaultRequestsMultiplier
-	}
-	if args.TargetUtilization == nil || *args.TargetUtilization <= 0 {
-		args.TargetUtilization = &DefaultTargetUtilizationPercent
+	if args.TargetUtilization == nil {
+		args.TargetUtilization = DefaultTargetUtilizationPercent
 	}
 }
