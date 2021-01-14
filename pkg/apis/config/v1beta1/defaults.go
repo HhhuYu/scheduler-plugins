@@ -63,6 +63,8 @@ var (
 		v1.ResourceMemory: defaultMemoryWeight,
 	}
 
+	DefaultSafeVarianceMargin int64 = 1
+
 	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
 )
 
@@ -114,5 +116,12 @@ func SetDefaultTargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 	}
 	if args.TargetUtilization == nil {
 		args.TargetUtilization = DefaultTargetUtilizationPercent
+	}
+}
+
+// SetLoadVariationRiskBalancingArgs sets the default parameters for LoadVariationRiskBalancingArgs plugin
+func SetDefaultLoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingArgs) {
+	if args.SafeVarianceMargin == nil {
+		args.SafeVarianceMargin = &DefaultSafeVarianceMargin
 	}
 }
