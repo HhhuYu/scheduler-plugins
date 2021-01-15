@@ -282,6 +282,9 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	if nodeMemoryCapMillis != 0 {
 		predictedMemoryUsage = 100 * (nodeMemoryUtilMillis + float64(curPodMemoryUsage) + float64(missingMemoryUtilMillis)) / nodeMemoryCapMillis
 	}
+
+	klog.V(6).Infof("hostTargetUtilizationPercent: %v", hostTargetUtilizationPercent)
+	klog.V(6).Infof("predictedCPUUsage: %v", predictedCPUUsage)
 	if predictedCPUUsage > float64(hostTargetUtilizationPercent[v1.ResourceCPU]) {
 		if predictedCPUUsage > 100 {
 			return framework.MinNodeScore, framework.NewStatus(framework.Success, "")
@@ -291,7 +294,8 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 		return penalisedScore, framework.NewStatus(framework.Success, "")
 	}
 
-	if predictedMemoryUsage > float64(hostTargetUtilizationPercent[v1.ResourceCPU]) {
+	klog.V(6).Infof("predictedMemoryUsage: %v", predictedMemoryUsage)
+	if predictedMemoryUsage > float64(hostTargetUtilizationPercent[v1.ResourceMemory]) {
 		if predictedMemoryUsage > 100 {
 			return framework.MinNodeScore, framework.NewStatus(framework.Success, "")
 		}
