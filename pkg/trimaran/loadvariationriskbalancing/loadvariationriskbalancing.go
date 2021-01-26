@@ -28,7 +28,7 @@ const (
 	metricsAgentReportingIntervalSeconds = 60
 	httpClientTimeoutSeconds             = 55 * time.Second
 	metricsUpdateIntervalSeconds         = 30
-	Name                                 = "Loadvariationriskbalancing"
+	Name                                 = "LoadVariationRiskBalancing"
 )
 
 var (
@@ -39,7 +39,7 @@ var (
 )
 
 // Loadvariationriskbalancing plugin struct
-type Loadvariationriskbalancing struct {
+type LoadVariationRiskBalancing struct {
 	handle       framework.FrameworkHandle
 	client       http.Client
 	metrics      watcher.WatcherMetrics
@@ -48,7 +48,7 @@ type Loadvariationriskbalancing struct {
 	mu sync.RWMutex
 }
 
-// New the Loadvariationriskbalancing constructor
+// New the LoadVariationRiskBalancing constructor
 func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin, error) {
 	args, err := getArgs(obj)
 	if err != nil {
@@ -58,7 +58,8 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 	watcherAddress = args.WatcherAddress
 
 	podAssignEventHandler := trimaran.New()
-	pl := &Loadvariationriskbalancing{
+	pl := &LoadVariationRiskBalancing{
+		handle: handle,
 		client: http.Client{
 			Timeout: httpClientTimeoutSeconds,
 		},
@@ -104,7 +105,7 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 	return pl, nil
 }
 
-func (pl *Loadvariationriskbalancing) updateMetrics() error {
+func (pl *LoadVariationRiskBalancing) updateMetrics() error {
 	req, err := http.NewRequest(http.MethodGet, watcherAddress+WatcherBaseUrl, nil)
 	if err != nil {
 		klog.Errorf("new watcher request failed: %v", err)
@@ -142,7 +143,7 @@ func (pl *Loadvariationriskbalancing) updateMetrics() error {
 	return nil
 }
 
-func (pl *Loadvariationriskbalancing) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
+func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
 		return framework.MinNodeScore, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
@@ -236,7 +237,7 @@ func (pl *Loadvariationriskbalancing) Score(ctx context.Context, cycleState *fra
 }
 
 // Name return Loadvariationriskbalancing name
-func (pl *Loadvariationriskbalancing) Name() string {
+func (pl *LoadVariationRiskBalancing) Name() string {
 	return Name
 }
 
@@ -252,11 +253,11 @@ func getArgs(obj runtime.Object) (*pluginConfig.LoadVariationRiskBalancingArgs, 
 	return loadVariationRiskBalancingArgs, nil
 }
 
-func (pl *Loadvariationriskbalancing) ScoreExtensions() framework.ScoreExtensions {
+func (pl *LoadVariationRiskBalancing) ScoreExtensions() framework.ScoreExtensions {
 	return pl
 }
 
-func (pl *Loadvariationriskbalancing) NormalizeScore(context.Context, *framework.CycleState, *v1.Pod, framework.NodeScoreList) *framework.Status {
+func (pl *LoadVariationRiskBalancing) NormalizeScore(context.Context, *framework.CycleState, *v1.Pod, framework.NodeScoreList) *framework.Status {
 	return nil
 }
 
